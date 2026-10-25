@@ -204,7 +204,10 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
     def finding_block(f: dict[str, Any], label: str) -> str:
         ctx = set(f.get("context_event_ids", []))
         ev_rows = []
-        for eid in f["event_ids"][:MAX_EVIDENCE]:
+        repeats = int(f.get("occurrences", 1) or 1)
+        # Identical repeats: list the event once; the repeat line below gives count and span.
+        shown = f["event_ids"][:1] if repeats > 1 else f["event_ids"][:MAX_EVIDENCE]
+        for eid in shown:
             e = events.get(eid)
             if not e:
                 continue
@@ -212,12 +215,17 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
             ev_rows.append(f"<tr><td class='mono'>{_e(eid)}</td><td class='mono'>{_e(_when(e['ts'], False))}</td>"
                            f"<td class='mono'>{_e(e['host'])}</td><td>{_e(e['message'])}{note}</td></tr>")
         more = len(f["event_ids"]) - MAX_EVIDENCE
-        if more > 0:
+        if repeats > 1:
+            ev_rows.append(f"<tr><td colspan='4'><b>Identical event repeated {repeats} times</b> between "
+                           f"{_e(_when(f['ts'], False))} and {_e(_when(f.get('last_ts'), False))} UTC "
+                           f"(events {_e(f['event_ids'][0])} to {_e(f['event_ids'][-1])}).</td></tr>")
+        elif more > 0:
             ev_rows.append(f"<tr><td colspan='4' class='muted'>... and {more} more events (see analysis.json)</td></tr>")
         ents = f["entities"]["hosts"] + f["entities"]["users"] + f["entities"]["ips"]
         return f"""
         <article class="finding" style="--c:{SEV_COLORS.get(f['severity'], '#64748b')}">
           <header><span class="fid">{label}</span> {_sev(f['severity'])} <h3>{_e(f['title'])}</h3>
+            {_badge(f"x{repeats}", "#0d9488") if repeats > 1 else ""}
             <span class="muted when">{_e(_when(f['ts']))}</span></header>
           <p class="fsum">{_e(f['summary'])}</p>
           <p class="meta"><span class="tech">{_e(f['technique'])}</span> {_e(f['technique_name'])} &middot; {_e(f['tactic'])}

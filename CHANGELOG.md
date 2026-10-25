@@ -14,6 +14,12 @@
   and analyst decisions; full chain of custody; and method and limitations. Prints cleanly to
   PDF (A4) with page numbers, keeps headings with their content, and starts Findings and Custody
   on new pages. A "Print or save as PDF" button is shown on screen.
+- **Repeated identical findings are grouped:** single-event findings with the same rule, host,
+  event kind and message become one finding with a count and first/last time (for example an
+  endpoint agent installing the same service 24 times a day). Every event is kept as evidence,
+  and anything that differs stays separate. On a real laptop collection this turned 36 findings
+  into 6; across the 28 validation datasets, 73 into 62, with detection scores unchanged.
+- `tracevault validate` says when datasets are missing instead of silently reporting "n/a".
 - The open case and tab are part of the URL (`#CASE-002/findings`), so views can be linked.
 - Storyline keeps rule titles in their original case ("AWS console login without MFA").
 - Case IDs are checked with a full match (a trailing newline used to pass), Windows device names

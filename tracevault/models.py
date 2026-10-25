@@ -71,6 +71,12 @@ class Finding:
     # Evidence shown for context but not attributed to the attacker (e.g. the user's normal
     # login that an impossible-travel finding is compared against)
     context: list[Event] = field(default_factory=list)
+    # How many identical repeats were folded into this finding (see detections.group_repeats).
+    occurrences: int = 1
+
+    @property
+    def last_ts(self) -> datetime:
+        return max(e.ts for e in self.events)
 
     def attributed(self) -> list[Event]:
         ctx = {id(e) for e in self.context}
@@ -96,6 +102,8 @@ class Finding:
             "description": self.description,
             "summary": self.summary,
             "ts": self.ts.isoformat(),
+            "last_ts": self.last_ts.isoformat(),
+            "occurrences": self.occurrences,
             "category": self.category,
             "event_ids": [e.id for e in self.events],
             "context_event_ids": [e.id for e in self.context],

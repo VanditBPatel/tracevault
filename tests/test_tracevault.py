@@ -489,6 +489,55 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 400)
 
 
+class GroupingTests(unittest.TestCase):
+    """Exact repeats fold into one finding; anything that differs stays separate."""
+
+    def _svc(self, minute, name, path, host="WS1"):
+        rec = {"EventID": 7045, "TimeCreated": f"2026-10-25T05:{minute:02d}:00Z", "Channel": "System",
+               "Computer": host, "ServiceName": name, "ImagePath": path}
+        return rec
+
+    def _run(self, records):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "system.json"
+            p.write_text("\n".join(json.dumps(r) for r in records))
+            events = parsers.parse_files([p])
+        rule = next(r for r in detections.load_rules() if r["id"] == "TV-022")
+        return [f for f in detections.run(events, [rule])]
+
+    def test_identical_repeats_are_grouped(self):
+        recs = [self._svc(m, "AgentJob", "C:\\Program Files\\Agent\\job.exe") for m in (1, 7, 30)]
+        (f,) = self._run(recs)
+        self.assertEqual(f.occurrences, 3)
+        self.assertEqual(len(f.events), 3)  # every event kept as evidence
+        self.assertEqual((f.ts.minute, f.last_ts.minute), (1, 30))
+        d = f.to_dict()
+        self.assertEqual((d["occurrences"], d["last_ts"][14:16]), (3, "30"))
+
+    def test_any_difference_keeps_findings_separate(self):
+        recs = [self._svc(1, "AgentJob", "C:\\Program Files\\Agent\\job.exe"),
+                self._svc(2, "AgentJob", "C:\\Users\\Public\\job.exe"),           # different path
+                self._svc(3, "AgentJob", "C:\\Program Files\\Agent\\job.exe", "WS2")]  # different host
+        found = self._run(recs)
+        self.assertEqual([f.occurrences for f in found], [1, 1, 1])
+
+    def test_multi_event_findings_never_grouped(self):
+        # Threshold / followed_by findings already aggregate; grouping leaves them alone.
+        found = detections.run(sample_events())
+        self.assertEqual([f.rule_id for f in found if f.occurrences > 1], [])
+
+    def test_grouped_finding_shown_once_with_count(self):
+        from tracevault import report
+        recs = [self._svc(m, "AgentJob", "C:\\Program Files\\Agent\\job.exe") for m in (1, 7)]
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "system.json"
+            p.write_text("\n".join(json.dumps(r) for r in recs))
+            result = analysis.analyze(parsers.parse_files([p]))
+        self.assertEqual(result["stats"]["findings"], 1)
+        html = report.render(result, [], {"ok": True, "entries": 0, "evidence": [], "problems": []})
+        self.assertIn("Identical event repeated 2 times", html)
+
+
 class ReportTests(unittest.TestCase):
     def setUp(self):
         from tracevault import report

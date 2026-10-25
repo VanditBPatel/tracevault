@@ -193,9 +193,35 @@ def run_rule(rule: dict, events: list[Event]) -> list[Finding]:
     raise ValueError(f"Unknown rule type {rtype!r} in rule {rule.get('id')}")
 
 
+def group_repeats(findings: list[Finding]) -> list[Finding]:
+    """Fold exact repeats into one finding with a count.
+
+    Only single-event findings are grouped, and only when the rule, host, event kind and event
+    message are all identical - for example the same service installed by an endpoint agent 24
+    times a day. Anything that differs in any detail (another host, another command line, another
+    service path) stays a separate finding. Every grouped event is kept as evidence.
+    """
+    groups: dict[tuple, Finding] = {}
+    out: list[Finding] = []
+    for f in sorted(findings, key=lambda f: (f.ts, f.rule_id)):
+        if len(f.events) != 1 or f.context:
+            out.append(f)
+            continue
+        e = f.events[0]
+        key = (f.rule_id, f.category, e.host, e.kind, e.message)
+        first = groups.get(key)
+        if first is None:
+            groups[key] = f
+            out.append(f)
+        else:
+            first.events.append(e)
+            first.occurrences += 1
+    return out
+
+
 def run(events: list[Event], rules: list[dict] | None = None) -> list[Finding]:
     rules = rules if rules is not None else load_rules()
     events = [e for e in events if not e.fields.get("duplicate_of")]
-    findings = [f for rule in rules for f in run_rule(rule, events)]
+    findings = group_repeats([f for rule in rules for f in run_rule(rule, events)])
     findings.sort(key=lambda f: (f.ts, f.rule_id))
     return findings

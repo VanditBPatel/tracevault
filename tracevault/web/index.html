@@ -634,6 +634,14 @@ function bindOverview() {
 // ===================================================================== findings
 function evidenceRows(f, byId) {
   const ctx = new Set(f.context_event_ids || []);
+  if ((f.occurrences || 1) > 1) {
+    // Identical repeats: show the event once, then every time it happened.
+    const evs = f.event_ids.map(id => byId[id]).filter(Boolean);
+    const e = evs[0];
+    return `<div class="ev"><span class="t">${time(e.ts)}</span><span class="h" title="${esc(e.source)}">${esc(e.host)}</span><span class="m">${esc(e.message)}</span></div>
+      <div class="note">${icon("refresh")} Identical event repeated <b>${f.occurrences}×</b> between ${time(f.ts)} and ${time(f.last_ts)} UTC:
+        <div class="chips" style="margin-top:6px">${evs.slice(0, 60).map(x => `<span class="chip">${time(x.ts)}</span>`).join("")}${evs.length > 60 ? `<span class="chip">+${evs.length - 60}</span>` : ""}</div></div>`;
+  }
   return f.event_ids.map(id => byId[id]).filter(Boolean).map(e => `
     <div class="ev"><span class="t">${time(e.ts)}</span><span class="h" title="${esc(e.source)}">${esc(e.host)}</span>
       <span class="m">${esc(e.message)}${ctx.has(e.id) ? ` <span class="ctx">— context, not attributed to the attacker</span>` : ""}</span></div>`).join("");
@@ -681,7 +689,8 @@ function findingCard(f, idx, byId) {
     <div class="fmain">
       <div class="time">${time(f.ts)}</div>
       <div style="min-width:0">
-        <div class="title"><span class="badge" style="--c:${sevVar(f.severity)}">${esc(f.severity)}</span>${esc(f.title)}</div>
+        <div class="title"><span class="badge" style="--c:${sevVar(f.severity)}">${esc(f.severity)}</span>${esc(f.title)}
+          ${(f.occurrences || 1) > 1 ? `<span class="badge" style="--c:var(--accent)" title="Identical repeats grouped into one finding">×${f.occurrences} · until ${time(f.last_ts)}</span>` : ""}</div>
         <div class="summary">${esc(f.summary)}</div>
         <div class="tags"><span class="tech" title="${esc(f.technique_name)}">${esc(f.technique)}</span><span class="muted" style="font-size:12px">${esc(f.tactic)}</span>
           ${ents.slice(0, 4).map(x => `<span class="chip">${esc(x)}</span>`).join("")}${ents.length > 4 ? `<span class="chip">+${ents.length - 4}</span>` : ""}</div>

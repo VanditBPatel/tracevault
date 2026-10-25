@@ -37,7 +37,9 @@ def _print_summary(result: dict) -> None:
         if rows:
             print(f"\n  {label}")
         for f in rows:
-            print(f"   [{SEV_TAG[f['severity']]}] {f['ts'][11:19]} {f['rule_id']} {f['technique']:<10} {f['title']}")
+            repeats = f.get("occurrences", 1)
+            times = f" x{repeats} (until {f['last_ts'][11:19]})" if repeats > 1 else ""
+            print(f"   [{SEV_TAG[f['severity']]}] {f['ts'][11:19]} {f['rule_id']} {f['technique']:<10} {f['title']}{times}")
     print()
 
 
@@ -184,6 +186,10 @@ def cmd_validate(a: argparse.Namespace) -> int:
             manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             print(f"  pinned SHA-256 hashes in {manifest_path}")
     score = validate.run(manifest, data_dir, detections.load_rules(Path(a.rules) if a.rules else None))
+    missing = score["summary"]["missing"]
+    if missing:
+        print(f"note: {missing} of {len(manifest['datasets'])} datasets are not in {data_dir} - "
+              f"add --fetch to download them (or set TRACEVAULT_DATA).", file=sys.stderr)
     print(validate.render_markdown(score))
     if a.json_out:
         Path(a.json_out).write_text(json.dumps(score, indent=2), encoding="utf-8")
