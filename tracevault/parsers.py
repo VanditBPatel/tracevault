@@ -619,16 +619,16 @@ def _short(value: Any, limit: int = 60) -> str:
 
 
 _TZ_NO_COLON = re.compile(r"([+-]\d{2})(\d{2})$")
-_LONG_FRACTION = re.compile(r"(\.\d{6})\d+")
+_FRACTION = re.compile(r"\.(\d+)")
 
 
 def _iso(value: str) -> datetime:
-    # Normalise what Python 3.10's fromisoformat rejects: "Z", a +HHMM offset (journalctl),
-    # and more than six fractional digits (Windows writes seven).
+    # Normalise what Python 3.10's fromisoformat rejects: "Z", a +HHMM offset (journalctl), and
+    # fractions that are not exactly 3 or 6 digits (Windows writes seven, some tools write one).
     s = str(value).strip().replace("Z", "+00:00")
     if "T" in s or " " in s:
         s = _TZ_NO_COLON.sub(r"\1:\2", s)
-    s = _LONG_FRACTION.sub(r"\1", s)
+    s = _FRACTION.sub(lambda m: "." + (m.group(1) + "000000")[:6], s, count=1)
     return _to_utc(datetime.fromisoformat(s))
 
 
