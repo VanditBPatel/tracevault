@@ -489,6 +489,93 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 400)
 
 
+class CollectionTests(unittest.TestCase):
+    """ingest-collection: verify a collector folder against its manifest, then ingest it."""
+
+    RECORDS = [
+        {"EventID": 4625, "TimeCreated": "2026-10-25T05:00:01.000000Z", "Channel": "Security",
+         "Computer": "WS9", "TargetUserName": "admin", "IpAddress": "203.0.113.9", "LogonType": "3"},
+        {"EventID": 1102, "TimeCreated": "2026-10-25T05:10:00.123456Z", "Channel": "Security",
+         "Computer": "WS9", "SubjectUserName": "mallory"},
+    ]
+
+    def setUp(self):
+        from tracevault.custody import sha256_file
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.folder = self.root / "TraceVault-WS9"
+        self.folder.mkdir()
+        data = self.folder / "WS9_security.jsonl"
+        data.write_text("\n".join(json.dumps(r) for r in self.RECORDS) + "\n", encoding="utf-8")
+        self.manifest = {
+            "collector": "TraceVault Windows collector", "version": "0.2.0", "host": "WS9",
+            "collected_by_account": "CORP\\responder", "elevated": True, "examiner": "J. Doe",
+            "window": {"since": "2026-10-24T05:00:00.000000Z", "until": "2026-10-25T06:00:00.000000Z"},
+            "files": [{"name": data.name, "channel": "Security", "format": "jsonl", "events": 2,
+                       "sha256": sha256_file(data)}],
+            "skipped": [{"channel": "Microsoft-Windows-Sysmon/Operational", "reason": "log not present"}],
+        }
+        self._write_manifest()
+        self.case = Case.create(self.root / "cases", "C-1", examiner="tester")
+
+    def _write_manifest(self):
+        # PowerShell 5.1 writes UTF-8 with a BOM by default; make sure that is accepted.
+        (self.folder / "manifest.json").write_text("﻿" + json.dumps(self.manifest), encoding="utf-8")
+
+    def tearDown(self):
+        for p in self.case.evidence_files():
+            os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+        self.tmp.cleanup()
+
+    def test_verified_collection_is_ingested_and_logged(self):
+        (self.folder / "stray.txt").write_text("not from the collector")
+        entry = workflow.ingest_collection(self.case, self.folder, examiner="analyst")
+        self.assertEqual(entry["action"], "evidence.collection")
+        self.assertEqual(entry["details"]["host"], "WS9")
+        self.assertEqual(entry["details"]["unlisted_files_not_ingested"], ["stray.txt"])
+        self.assertEqual(sorted(p.name for p in self.case.evidence_files()), ["WS9_security.jsonl", "manifest.json"])
+        self.assertTrue(self.case.verify()["ok"])
+        result = workflow.analyze_case(self.case, examiner="analyst")
+        self.assertEqual(result["stats"]["events"], 2)  # the manifest itself is not parsed as events
+        self.assertIn("TV-024", [f["rule_id"] for f in result["findings"]])
+
+    def test_altered_file_blocks_the_whole_collection(self):
+        with open(self.folder / "WS9_security.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({**self.RECORDS[0], "IpAddress": "10.0.0.1"}) + "\n")
+        with self.assertRaises(IOError) as ctx:
+            workflow.ingest_collection(self.case, self.folder, examiner="analyst")
+        self.assertIn("SHA-256 differs", str(ctx.exception))
+        self.assertEqual(self.case.evidence_files(), [])
+
+    def test_missing_file_and_path_tricks_rejected(self):
+        self.manifest["files"].append({"name": "..\\..\\secrets.txt", "sha256": "0" * 64})
+        self.manifest["files"].append({"name": "WS9_system.jsonl", "sha256": "0" * 64})
+        self._write_manifest()
+        with self.assertRaises(IOError) as ctx:
+            workflow.ingest_collection(self.case, self.folder, examiner="analyst")
+        self.assertIn("invalid file name", str(ctx.exception))
+        self.assertIn("missing", str(ctx.exception))
+        self.assertEqual(self.case.evidence_files(), [])
+
+    def test_not_a_collector_folder(self):
+        (self.folder / "manifest.json").write_text(json.dumps({"files": []}))
+        with self.assertRaises(ValueError):
+            workflow.ingest_collection(self.case, self.folder)
+
+    def test_collector_script_ships_with_matching_version(self):
+        from tracevault import __version__
+        from tracevault.cli import COLLECTORS
+        script = COLLECTORS["windows"].read_text(encoding="utf-8")
+        self.assertIn(f"$CollectorVersion = '{__version__}'", script)
+
+    def test_collector_record_shape_parses(self):
+        # The exact shape the collector writes: ISO UTC TimeCreated with a Z, Computer, Channel.
+        events = parsers.parse_files([self.folder / "WS9_security.jsonl"])
+        self.assertEqual([e.kind for e in events], ["auth.failure", "log.cleared"])
+        self.assertEqual(events[0].ts.isoformat(), "2026-10-25T05:00:01+00:00")
+        self.assertEqual((events[0].host, events[0].user, events[0].src_ip), ("WS9", "admin", "203.0.113.9"))
+
+
 class IdentityTests(unittest.TestCase):
     def test_canonical_auto_linking(self):
         self.assertEqual(identities.canonical("Priya@Acme.io"), "priya")

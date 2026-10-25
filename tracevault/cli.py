@@ -55,6 +55,38 @@ def cmd_ingest(a: argparse.Namespace) -> int:
     return 0
 
 
+COLLECTORS = {"windows": Path(__file__).resolve().parent / "collectors" / "Collect-TraceVault.ps1"}
+
+
+def cmd_ingest_collection(a: argparse.Namespace) -> int:
+    case = Case.open(a.cases, a.case_id)
+    entry = workflow.ingest_collection(case, Path(a.folder), examiner=a.examiner)
+    d = entry["details"]
+    print(f"Verified and ingested {len(d['files'])} file(s) from {d['host']} "
+          f"({d['window'].get('since', '?')} -> {d['window'].get('until', '?')}).")
+    for f in d["files"]:
+        print(f"  + {f['name']:<40} {f['events'] if f['events'] is not None else '-':>8} events")
+    for s in d["skipped"]:
+        print(f"  - skipped on host: {s.get('channel')}: {s.get('reason')}")
+    if not d["elevated"]:
+        print("  ! the collector was not run as Administrator, so the Security log may be missing")
+    for name in d["unlisted_files_not_ingested"]:
+        print(f"  ! not in the manifest, NOT ingested: {name}")
+    print(f"Next: tracevault --cases {a.cases} analyze {a.case_id}")
+    return 0
+
+
+def cmd_collector_script(a: argparse.Namespace) -> int:
+    src = COLLECTORS[a.platform]
+    out = Path(a.output or src.name)
+    if out.exists() and not a.force:
+        raise FileExistsError(f"{out} exists (use --force to overwrite)")
+    out.write_bytes(src.read_bytes())
+    print(f"Wrote {out}. Copy it to the host and run from an elevated PowerShell:")
+    print(f"  powershell -NoProfile -ExecutionPolicy Bypass -File .\\{out.name} -Examiner \"<your name>\"")
+    return 0
+
+
 def cmd_analyze(a: argparse.Namespace) -> int:
     case = Case.open(a.cases, a.case_id)
     result = workflow.analyze_case(case, examiner=a.examiner, year=a.year,
@@ -204,6 +236,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("case_id"); sp.add_argument("files", nargs="+")
     sp.add_argument("--examiner"); sp.add_argument("--note", default="")
 
+    sp = add("ingest-collection", cmd_ingest_collection,
+             "verify a collector output folder against its manifest and ingest it")
+    sp.add_argument("case_id"); sp.add_argument("folder"); sp.add_argument("--examiner")
+
+    sp = add("collector-script", cmd_collector_script, "write the evidence collector script to copy to a host")
+    sp.add_argument("platform", choices=sorted(COLLECTORS))
+    sp.add_argument("-o", "--output"); sp.add_argument("--force", action="store_true")
+
     sp = add("analyze", cmd_analyze, "parse evidence, run detections, export report")
     sp.add_argument("case_id"); sp.add_argument("--examiner"); sp.add_argument("--year", type=int)
     sp.add_argument("--rules", help="custom rules JSON")
@@ -257,6 +297,6 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.fn(args)
-    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

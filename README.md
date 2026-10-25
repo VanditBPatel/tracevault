@@ -53,6 +53,42 @@ Then open http://127.0.0.1:8765. The demo loads two realistic sample breaches:
   consent in Microsoft 365, then in AWS: recon, a backdoor IAM user with admin rights, a customer
   data bucket made public, and CloudTrail switched off.
 
+## Collecting evidence from a Windows host
+
+The collector is a single PowerShell script. It needs no install, so copy it to the suspect
+machine. Get it with:
+
+```bash
+tracevault collector-script windows
+```
+
+On the host, from an **elevated** PowerShell (the Security log needs Administrator rights):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Collect-TraceVault.ps1 -Examiner "J. Doe"
+```
+
+- It exports Security, System and Sysmon (if installed) for the last 72 hours by default
+  (`-Since` / `-Until` to change), as JSON Lines that TraceVault reads.
+- It writes `manifest.json` with each file's SHA-256, the host, account, time window and whether
+  it ran elevated, and lists every channel it could not read and why.
+- `-IncludeEvtx` also keeps native `.evtx` copies for preservation. `-MaxEvents` caps very busy
+  logs (newest kept).
+- It only reads logs and writes into its output folder. It changes no settings and sends nothing
+  over the network. `-ExecutionPolicy Bypass` applies to that one PowerShell process only.
+- Speed: about 500 events/s on a laptop with Windows PowerShell 5.1. It reads with
+  `EventLogReader`; `Get-WinEvent` renders every message and was about 15x slower.
+
+Copy the output folder to the analyst machine, then:
+
+```bash
+tracevault ingest-collection IR-2026-014 TraceVault-WS01-20261025T060158Z
+```
+
+Every file is checked against the hashes recorded on the host. If any file is missing or
+altered, **nothing** is ingested. The collection details are logged as an `evidence.collection`
+custody entry, so the chain of custody starts at collection, not at ingest.
+
 ## Working a real case
 
 ```bash
@@ -67,6 +103,8 @@ tracevault anchor IR-2026-014
 |---|---|
 | `case-new` | Create a case workspace and open its custody ledger |
 | `ingest` | Hash the original, copy it read-only into the case, re-hash, log both |
+| `ingest-collection` | Verify a collector folder against its manifest, then ingest all of it (or nothing) |
+| `collector-script` | Write the Windows collector script, to copy to a host |
 | `analyze` | Parse all evidence, run detections, write `analysis.json` + `report.html` |
 | `verify` | Re-check the whole ledger chain and every evidence hash (exit code 2 on failure) |
 | `anchor` | Print the ledger head hash, to timestamp externally (notary, RFC 3161 TSA, blockchain) |
@@ -206,6 +244,7 @@ tracevault/            the package
   server.py            stdlib HTTP dashboard + JSON API
   validate.py          accuracy scoring against public datasets
   web/index.html       dashboard UI
+  collectors/          Collect-TraceVault.ps1 (Windows evidence collector)
   samples/case-00x/    sample breach evidence used by `tracevault demo`
   datasets/            validation manifests (otrf = tuning set, otrf-holdout = held-out set)
 tests/                 unittest suite

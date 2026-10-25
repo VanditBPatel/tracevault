@@ -32,3 +32,54 @@ jobs:
           tracevault --cases smoke demo
           tracevault --cases smoke verify CASE-001
           tracevault --cases smoke verify CASE-002
+
+  collector:
+    # Runs the Windows collector for real on the runner, under Windows PowerShell 5.1 (what every
+    # Windows host has) and PowerShell 7, then ingests, analyses and verifies the output.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install .
+      - name: Write the packaged collector script
+        shell: pwsh
+        run: tracevault collector-script windows -o "$env:RUNNER_TEMP\Collect-TraceVault.ps1"
+      - name: Collect with Windows PowerShell 5.1
+        shell: pwsh
+        run: |
+          $since = (Get-Date).AddHours(-6).ToString('o')
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\Collect-TraceVault.ps1" `
+            -Since $since -OutDir "$env:RUNNER_TEMP\c51" -Examiner ci -MaxEvents 20000 -IncludeEvtx
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Collect with PowerShell 7
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP\Collect-TraceVault.ps1" -Since (Get-Date).AddHours(-6) `
+            -OutDir "$env:RUNNER_TEMP\c7" -Examiner ci -MaxEvents 20000
+      - name: Ingest, analyse and verify both collections
+        shell: pwsh
+        run: |
+          $cases = "$env:RUNNER_TEMP\cases"
+          foreach ($c in 'c51', 'c7') {
+            Get-Content "$env:RUNNER_TEMP\$c\manifest.json"
+            tracevault --cases $cases case-new "CI-$c" --examiner ci
+            tracevault --cases $cases ingest-collection "CI-$c" "$env:RUNNER_TEMP\$c" --examiner ci
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            tracevault --cases $cases analyze "CI-$c" --examiner ci
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            tracevault --cases $cases verify "CI-$c"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+      - name: Tampered collection is refused
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem "$env:RUNNER_TEMP\c7\*_system.jsonl" | Select-Object -First 1
+          Add-Content -LiteralPath $f.FullName -Value '{"EventID":1,"TimeCreated":"2026-01-01T00:00:00.000000Z","Channel":"System","Computer":"x"}'
+          tracevault --cases "$env:RUNNER_TEMP\cases" case-new CI-tamper --examiner ci
+          tracevault --cases "$env:RUNNER_TEMP\cases" ingest-collection CI-tamper "$env:RUNNER_TEMP\c7"
+          if ($LASTEXITCODE -eq 0) { Write-Error 'tampered collection was accepted'; exit 1 }
+          Write-Host 'tampered collection refused as expected'
+          exit 0

@@ -79,6 +79,65 @@ def unsuppress(case: Case, suppression_id: str, reason: str, examiner: str | Non
     return entry
 
 
+COLLECTION_MANIFEST = "manifest.json"
+
+
+def ingest_collection(case: Case, folder: Path, examiner: str | None = None) -> dict[str, Any]:
+    """Ingest a collector output folder. Every file is checked against the SHA-256 the collector
+    recorded on the host; if anything is missing or altered, nothing is ingested."""
+    examiner = examiner or default_examiner()
+    folder = Path(folder)
+    manifest_path = folder / COLLECTION_MANIFEST
+    if not manifest_path.is_file():
+        raise ValueError(f"No {COLLECTION_MANIFEST} in {folder} - is this a TraceVault collector folder?")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    if "TraceVault" not in str(manifest.get("collector", "")) or not isinstance(manifest.get("files"), list):
+        raise ValueError(f"{manifest_path} is not a TraceVault collector manifest")
+
+    problems, verified = [], []
+    for entry in manifest["files"]:
+        name = str(entry.get("name", ""))
+        if not name or Path(name).name != name:  # plain file names only, nothing that walks out of the folder
+            problems.append(f"invalid file name in manifest: {name!r}")
+            continue
+        path = folder / name
+        if not path.is_file():
+            problems.append(f"{name}: listed in the manifest but missing")
+            continue
+        actual = sha256_file(path)
+        if actual != str(entry.get("sha256", "")).lower():
+            problems.append(f"{name}: SHA-256 differs from the collector's ({actual[:16]}... vs {str(entry.get('sha256'))[:16]}...)")
+            continue
+        verified.append((path, entry))
+    if problems:
+        raise IOError("Collection failed verification - nothing was ingested:\n  " + "\n  ".join(problems))
+
+    listed = {p.name for p, _ in verified} | {COLLECTION_MANIFEST}
+    unlisted = sorted(p.name for p in folder.iterdir() if p.is_file() and p.name not in listed)
+
+    source = f"collected on {manifest.get('host')} by {manifest.get('collected_by_account')}"
+    case.ingest(manifest_path, examiner=examiner, note=f"collector manifest, {source}")
+    for path, entry in verified:
+        case.ingest(path, examiner=examiner,
+                    note=f"{entry.get('channel')} ({entry.get('events')} events), {source}, verified against manifest")
+    window = manifest.get("window") or {}
+    return case.log("evidence.collection", examiner, details={
+        "collector": manifest.get("collector"),
+        "collector_version": manifest.get("version"),
+        "host": manifest.get("host"),
+        "collected_by_account": manifest.get("collected_by_account"),
+        "collector_examiner": manifest.get("examiner"),
+        "elevated": manifest.get("elevated"),
+        "window": window,
+        "collected_at": manifest.get("finished_at"),
+        "manifest_sha256": sha256_file(manifest_path),
+        "files": [{"name": e.get("name"), "channel": e.get("channel"), "events": e.get("events"),
+                   "sha256": e.get("sha256")} for _, e in verified],
+        "skipped": manifest.get("skipped", []),
+        "unlisted_files_not_ingested": unlisted,
+    })
+
+
 def load_analysis(case: Case) -> dict[str, Any] | None:
     path = case.dir / "analysis.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
