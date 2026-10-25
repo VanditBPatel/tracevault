@@ -549,12 +549,15 @@ class CollectionTests(unittest.TestCase):
 
     def test_missing_file_and_path_tricks_rejected(self):
         self.manifest["files"].append({"name": "..\\..\\secrets.txt", "sha256": "0" * 64})
+        self.manifest["files"].append({"name": "../etc/passwd", "sha256": "0" * 64})
+        self.manifest["files"].append({"name": "C:evil.json", "sha256": "0" * 64})
         self.manifest["files"].append({"name": "WS9_system.jsonl", "sha256": "0" * 64})
         self._write_manifest()
         with self.assertRaises(IOError) as ctx:
             workflow.ingest_collection(self.case, self.folder, examiner="analyst")
-        self.assertIn("invalid file name", str(ctx.exception))
-        self.assertIn("missing", str(ctx.exception))
+        msg = str(ctx.exception)
+        self.assertEqual(msg.count("invalid file name"), 3)
+        self.assertIn("WS9_system.jsonl: listed in the manifest but missing", msg)
         self.assertEqual(self.case.evidence_files(), [])
 
     def test_not_a_collector_folder(self):

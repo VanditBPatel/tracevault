@@ -97,7 +97,9 @@ def ingest_collection(case: Case, folder: Path, examiner: str | None = None) -> 
     problems, verified = [], []
     for entry in manifest["files"]:
         name = str(entry.get("name", ""))
-        if not name or Path(name).name != name:  # plain file names only, nothing that walks out of the folder
+        # Plain file names only, judged the same on every OS (a manifest written on Windows may be
+        # checked on Linux, where a backslash is not a path separator).
+        if not name or name in (".", "..") or any(ch in name for ch in "/\\:") or Path(name).name != name:
             problems.append(f"invalid file name in manifest: {name!r}")
             continue
         path = folder / name
