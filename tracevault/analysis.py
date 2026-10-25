@@ -95,7 +95,7 @@ def narrative(findings: list[Finding], idents: list[dict[str, Any]] | None = Non
         if not hits:
             continue
         first = min(hits, key=lambda f: f.ts)
-        titles = sorted({f.title.lower() for f in hits})
+        titles = sorted({f.title for f in hits}, key=str.lower)
         hosts = sorted({h for f in hits for h in f.entities()["hosts"]})
         lines.append(
             f"{tactic} - from {first.ts:%H:%M} UTC: {'; '.join(titles)} on {', '.join(hosts)} "

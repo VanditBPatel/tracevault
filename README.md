@@ -22,11 +22,24 @@ It uses only the Python 3.10+ standard library, with no dependencies. It works f
 the only command that touches the internet is `validate --fetch`, which you run on purpose to
 download public test datasets. That makes it safe to drop on an IR jump box.
 
-![TraceVault dashboard showing the CASE-002 cloud identity takeover: risk score, attacker window, storyline, an identity compromised across Okta, Microsoft 365 and AWS, the ATT&CK kill chain and findings](docs/images/dashboard.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
+  <img alt="TraceVault dashboard overview for the CASE-002 cloud identity takeover: risk gauge, findings, attacker window, a numbered storyline, and identities compromised or created across Okta, Microsoft 365 and AWS" src="docs/images/dashboard-light.png">
+</picture>
 
 *The dashboard on the bundled CASE-002 sample: an Okta password spray and MFA push bombing, a
 mailbox forwarding rule in Microsoft 365, and an AWS backdoor user, public bucket and stopped
-CloudTrail, all from made-up data.*
+CloudTrail, all from made-up data. It follows your light or dark setting and works on a phone.*
+
+<details>
+<summary>Findings view</summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/findings-dark.png">
+  <img alt="Findings tab: severity filters with counts, search, and finding cards with ATT&CK technique, entities, and Evidence and Suppress actions" src="docs/images/findings-light.png">
+</picture>
+
+</details>
 
 > Business plan, market and roadmap: [docs/BUSINESS.md](docs/BUSINESS.md) ·
 > Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·

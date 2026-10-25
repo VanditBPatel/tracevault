@@ -699,8 +699,10 @@ class CustodyTests(unittest.TestCase):
         self.assertTrue(any("never logged" in p for p in v["problems"]))
 
     def test_invalid_case_id_rejected(self):
-        with self.assertRaises(ValueError):
-            Case(self.root, "../escape")
+        for bad in ("../escape", "a/b", "a\\b", ".hidden", "", "CASE-1\n", "CON", "nul.txt", "x" * 65):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                Case(self.root, bad)
+        self.assertEqual(Case(self.root, "IR-2026.014_a").dir.parent, Path(os.path.realpath(self.root)))
 
     def test_full_workflow(self):
         result = workflow.analyze_case(self.case, examiner="tester")

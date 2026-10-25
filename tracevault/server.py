@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import suppressions, workflow
-from .custody import CASE_ID_RE, Case
+from .custody import Case, valid_case_id
 
 WEB_DIR = Path(__file__).with_name("web")
 MAX_BODY = 64 * 1024
@@ -100,7 +100,7 @@ def make_handler(cases_root: Path):
             self._json({"error": msg}, status)
 
         def _case(self, case_id: str) -> Case | None:
-            if not CASE_ID_RE.match(case_id):
+            if not valid_case_id(case_id):
                 self._error(HTTPStatus.BAD_REQUEST, "invalid case id")
                 return None
             try:

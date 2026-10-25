@@ -30,7 +30,9 @@ from pathlib import Path
 from typing import Any
 
 GENESIS = "0" * 64
-CASE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+CASE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+# Names Windows treats as devices, not files, whatever the extension (CON, NUL.txt, ...).
+WINDOWS_DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
 
 def sha256_file(path: Path) -> str:
@@ -58,12 +60,27 @@ def default_examiner() -> str:
         return "unknown"
 
 
+def valid_case_id(case_id: str) -> bool:
+    """fullmatch, not match: with `$`, re.match also accepts a trailing newline."""
+    return (isinstance(case_id, str) and CASE_ID_RE.fullmatch(case_id) is not None
+            and case_id.split(".")[0].upper() not in WINDOWS_DEVICE_NAMES)
+
+
+def case_path(root: Path, case_id: str) -> Path:
+    """The case folder, guaranteed to sit directly inside the cases root."""
+    if not valid_case_id(case_id):
+        raise ValueError(f"Invalid case id {case_id!r} (letters, digits, '.', '_', '-' only)")
+    base = os.path.realpath(str(root))
+    full = os.path.realpath(os.path.join(base, case_id))
+    if not full.startswith(os.path.join(base, "")) or os.path.dirname(full) != base:
+        raise ValueError(f"Invalid case id {case_id!r}: resolves outside the cases folder")
+    return Path(full)
+
+
 class Case:
     def __init__(self, root: Path, case_id: str):
-        if not CASE_ID_RE.match(case_id):
-            raise ValueError(f"Invalid case id {case_id!r} (letters, digits, '.', '_', '-' only)")
+        self.dir = case_path(root, case_id)
         self.id = case_id
-        self.dir = Path(root) / case_id
         self.evidence_dir = self.dir / "evidence"
         self.ledger_path = self.dir / "ledger.jsonl"
         self.meta_path = self.dir / "case.json"
@@ -95,7 +112,7 @@ class Case:
         if not root.is_dir():
             return []
         return [Case(root, p.name) for p in sorted(root.iterdir())
-                if (p / "case.json").exists() and CASE_ID_RE.match(p.name)]
+                if (p / "case.json").exists() and valid_case_id(p.name)]
 
     @property
     def meta(self) -> dict[str, Any]:

@@ -3,146 +3,417 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>TraceVault</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2314b8a6' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E">
 <style>
+  /* Everything is local: TraceVault must work offline, so no web fonts, CDNs or icon libraries. */
   :root {
-    --bg: #0b1017; --panel: #121a24; --panel-2: #182231; --line: #233042;
-    --text: #e6edf5; --muted: #8696aa; --accent: #2dd4bf;
-    --low: #60a5fa; --medium: #facc15; --high: #fb923c; --critical: #f43f5e; --ok: #34d399;
-    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+    --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, ui-monospace, monospace;
+    --radius: 14px; --radius-sm: 9px;
+    --bg: #f5f7fb; --surface: #ffffff; --surface-2: #f0f3f8; --surface-3: #e7ecf3; --border: #e2e8f0; --border-strong: #cbd5e1;
+    --text: #0f172a; --text-2: #334155; --muted: #64748b; --faint: #94a3b8;
+    --accent: #0d9488; --accent-strong: #0f766e; --accent-soft: #ccfbf1; --on-accent: #ffffff;
+    --low: #2563eb; --medium: #b45309; --high: #c2410c; --critical: #e11d48; --ok: #059669; --bad: #e11d48;
+    --shadow: 0 1px 2px rgb(15 23 42 / .05), 0 4px 16px rgb(15 23 42 / .06);
+    --shadow-lg: 0 12px 40px rgb(15 23 42 / .16);
+    --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  :root[data-theme="dark"] {
+    --bg: #090d14; --surface: #0f1520; --surface-2: #151d2b; --surface-3: #1c2637; --border: #1f2a3b; --border-strong: #2c3a50;
+    --text: #e8edf5; --text-2: #c3cdda; --muted: #8796ab; --faint: #5c6b80;
+    --accent: #2dd4bf; --accent-strong: #5eead4; --accent-soft: #0f3b38; --on-accent: #04201c;
+    --low: #60a5fa; --medium: #fbbf24; --high: #fb923c; --critical: #fb7185; --ok: #34d399; --bad: #fb7185;
+    --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 20px rgb(0 0 0 / .25);
+    --shadow-lg: 0 16px 48px rgb(0 0 0 / .5);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
-  .logo { font-weight: 800; letter-spacing: .5px; } .logo span { color: var(--accent); }
-  header .sub { color: var(--muted); font-size: 12px; }
-  header .spacer { flex: 1; }
-  button, select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); color: #04201c; border-color: var(--accent); font-weight: 700; }
-  .layout { display: grid; grid-template-columns: 250px 1fr; min-height: calc(100vh - 53px); }
-  aside { border-right: 1px solid var(--line); padding: 14px; background: var(--panel); }
-  aside h3 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
-  .case-item { padding: 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; margin-bottom: 6px; }
-  .case-item:hover { background: var(--panel-2); }
-  .case-item.active { border-color: var(--accent); background: var(--panel-2); }
-  .case-item .cid { font-family: var(--mono); font-size: 12px; color: var(--accent); }
-  .case-item .ct { font-size: 13px; margin: 2px 0; }
-  main { padding: 20px; min-width: 0; }
-  .empty { color: var(--muted); padding: 40px; text-align: center; }
-  .case-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between; }
-  .case-head h1 { margin: 0; font-size: 20px; }
-  .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
-  .integrity { border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700; border: 1px solid; }
-  .integrity.ok { color: var(--ok); border-color: var(--ok); } .integrity.bad { color: var(--critical); border-color: var(--critical); }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 18px 0; }
-  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-  .kpi .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
-  .kpi .value { font-size: 28px; font-weight: 800; margin-top: 2px; }
-  .kpi .hint { color: var(--muted); font-size: 12px; }
-  .gauge { height: 6px; background: var(--panel-2); border-radius: 3px; margin-top: 8px; overflow: hidden; }
-  .gauge > div { height: 100%; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
-  .card h2 { margin: 0 0 12px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-  .card h2 .count { color: var(--muted); font-weight: 400; }
-  .grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
-  .story li { margin-bottom: 6px; }
-  .chain { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-  .tactic { border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-height: 76px; font-size: 11px; color: var(--muted); }
-  .tactic.hit { color: var(--text); background: color-mix(in srgb, var(--sev) 14%, transparent); border-color: var(--sev); }
-  .tactic .n { font-size: 20px; font-weight: 800; color: var(--sev); }
-  .tactic .tech { font-family: var(--mono); font-size: 10px; }
-  .sev { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #0b1017; background: var(--c); }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-  td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  tr.finding { cursor: pointer; } tr.finding:hover td, tr.finding.sel td { background: var(--panel-2); }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: none; box-shadow: var(--ring); border-radius: 8px; }
   .mono { font-family: var(--mono); font-size: 12px; }
   .muted { color: var(--muted); }
+  .ico { width: 16px; height: 16px; flex: none; display: inline-block; vertical-align: -3px; }
+
+  /* ---------- buttons & inputs */
+  .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: 10px;
+         border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px;
+         cursor: pointer; transition: background .15s, border-color .15s, transform .05s; white-space: nowrap; }
+  a.btn { text-decoration: none; }
+  .btn:hover { border-color: var(--border-strong); background: var(--surface-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn[disabled] { opacity: .55; cursor: progress; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.primary:hover { filter: brightness(1.07); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover { background: var(--surface-2); color: var(--text); }
+  .btn.sm { height: 30px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+  .btn.icon { width: 36px; padding: 0; justify-content: center; }
+  .btn.sm.icon { width: 30px; }
+  .field { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--border);
+           border-radius: 10px; background: var(--surface); color: var(--muted); transition: border-color .15s, box-shadow .15s; }
+  .field:focus-within { border-color: var(--accent); box-shadow: var(--ring); }
+  .field input { border: 0; outline: 0; background: transparent; width: 100%; min-width: 0; color: var(--text); }
+  textarea { width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+             padding: 8px 10px; color: var(--text); }
+  textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+
+  /* ---------- top bar */
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 20px;
+            background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: saturate(1.4) blur(12px);
+            border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.01em; font-size: 16px; }
+  .brand-mark { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
+                background: linear-gradient(135deg, var(--accent), #6366f1); color: #fff; box-shadow: var(--shadow); }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); letter-spacing: 0; }
+  .topbar .spacer { flex: 1; }
+  .examiner { width: 210px; }
+
+  /* ---------- shell */
+  .shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: calc(100vh - 60px); }
+  .sidebar { border-right: 1px solid var(--border); padding: 18px 14px; background: var(--surface); }
+  .side-title { display: flex; align-items: center; justify-content: space-between; margin: 0 6px 12px;
+                font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .case-list { display: grid; gap: 8px; }
+  .case-card { text-align: left; width: 100%; border: 1px solid transparent; background: transparent; border-radius: 12px;
+               padding: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
+  .case-card:hover { background: var(--surface-2); }
+  .case-card.active { background: var(--surface-2); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+  .case-card .cid { font-family: var(--mono); font-size: 11px; color: var(--accent); font-weight: 600; }
+  .case-card .ct { font-weight: 600; font-size: 13px; margin: 2px 0 8px; line-height: 1.35; color: var(--text); }
+  .meter { height: 5px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .meter > i { display: block; height: 100%; border-radius: 99px; }
+  .case-card .cm { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11.5px; color: var(--muted); }
+  main { min-width: 0; padding: 26px 32px 60px; max-width: 1360px; width: 100%; }
+
+  /* ---------- case header & tabs */
+  .crumbs { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  .case-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; justify-content: space-between; margin: 6px 0 18px; }
+  .case-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.02em; }
+  .case-head .meta { color: var(--muted); font-size: 12.5px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .case-head .meta span { display: inline-flex; gap: 5px; align-items: center; }
+  .head-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+  .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+  .pill.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 13%, transparent); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 22px; overflow-x: auto; scrollbar-width: none; }
+  .tab { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 11px 14px; border: 0; background: none;
+         color: var(--muted); font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .tab:hover { color: var(--text); }
+  .tab[aria-selected="true"] { color: var(--text); }
+  .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+  .tab .n { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--surface-3); color: var(--text-2); }
+
+  /* ---------- cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); min-width: 0; }
+  /* Vertical rhythm only for cards stacked in normal flow; cards inside a grid keep aligned tops. */
+  main > .card + .card, .tabpanel > .card + .card { margin-top: 18px; }
+  .card h2 { margin: 0 0 4px; font-size: 15px; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .card .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+  .grid-kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 18px; }
+  .kpi { display: flex; gap: 14px; align-items: center; }
+  .kpi .kicon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none;
+                color: var(--c, var(--accent)); background: color-mix(in srgb, var(--c, var(--accent)) 14%, transparent); }
+  .kpi .kicon .ico { width: 22px; height: 22px; }
+  .kpi .label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .kpi .value { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+  .kpi .hint { font-size: 12px; color: var(--muted); }
+  .gauge { position: relative; width: 64px; height: 64px; flex: none; }
+  .gauge svg { transform: rotate(-90deg); }
+  .gauge b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 17px; font-weight: 800; }
+  .grid-2 { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+
+  /* ---------- storyline */
+  .callouts { display: grid; gap: 10px; margin-bottom: 16px; }
+  .callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; font-size: 13.5px;
+             background: color-mix(in srgb, var(--c) 9%, transparent); border: 1px solid color-mix(in srgb, var(--c) 28%, transparent); }
+  .callout .ico { color: var(--c); margin-top: 2px; }
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+  .steps li { position: relative; padding: 0 0 16px 40px; }
+  .steps li::before { counter-increment: step; content: counter(step); position: absolute; left: 0; top: 0; width: 26px; height: 26px;
+                      border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800;
+                      background: var(--surface-3); color: var(--text-2); }
+  .steps li::after { content: ""; position: absolute; left: 12.5px; top: 30px; bottom: 4px; width: 1px; background: var(--border); }
+  .steps li:last-child::after { display: none; }
+  .steps .tactic { font-weight: 700; display: block; }
+  .steps .when { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 6px; }
+  .steps p { margin: 2px 0 0; color: var(--text-2); font-size: 13.5px; }
+
+  /* ---------- people & indicators */
+  .people { display: grid; gap: 4px; }
+  .person { display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 10px; }
+  .person:hover { background: var(--surface-2); }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; font-weight: 800; font-size: 13px;
+            color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); text-transform: uppercase; }
+  .person .who { min-width: 0; flex: 1; }
+  .person .name { font-weight: 700; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .person .sys { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .section-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin: 16px 0 8px; }
+  .section-label:first-child { margin-top: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 9px; border-radius: 99px; font-family: var(--mono);
+          font-size: 11.5px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); overflow-wrap: anywhere; }
+  .chip.danger { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); background: color-mix(in srgb, var(--critical) 8%, transparent); }
+  .chip small { color: var(--muted); }
+  .badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800;
+           letter-spacing: .04em; text-transform: uppercase; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); white-space: nowrap; }
+
+  /* ---------- ATT&CK chain */
+  .chain { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+  .tactic-tile { text-align: left; border: 1px solid var(--border); border-radius: 11px; padding: 10px; min-height: 84px; background: var(--surface-2);
+                 color: var(--faint); font-size: 11.5px; cursor: default; display: flex; flex-direction: column; gap: 4px; }
+  .tactic-tile b { color: var(--muted); font-weight: 700; font-size: 11.5px; line-height: 1.25; }
+  .tactic-tile.hit { cursor: pointer; color: var(--text-2); border-color: color-mix(in srgb, var(--c) 45%, transparent);
+                     background: color-mix(in srgb, var(--c) 10%, var(--surface)); transition: transform .12s, box-shadow .12s; }
+  .tactic-tile.hit:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .tactic-tile.hit b { color: var(--text); }
+  .tactic-tile .count { font-size: 20px; font-weight: 800; color: var(--c); line-height: 1; }
+  .tactic-tile .techs { font-family: var(--mono); font-size: 10.5px; }
+
+  /* ---------- findings */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border); flex-wrap: wrap; }
+  .seg button { border: 0; background: transparent; height: 30px; padding: 0 11px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  .seg .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .toolbar .grow { flex: 1; min-width: 200px; }
+  .flist { display: grid; gap: 10px; }
+  .finding { position: relative; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+  .finding::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+  .finding:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+  .finding.open { border-color: color-mix(in srgb, var(--c) 45%, var(--border)); }
+  .fmain { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 14px; padding: 14px 16px 14px 20px; align-items: start; }
+  .fmain .time { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+  .fmain .title { font-weight: 700; font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .fmain .summary { color: var(--text-2); font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
+  .fmain .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; align-items: center; }
+  .tech { font-family: var(--mono); font-size: 11px; color: var(--text-2); padding: 2px 7px; border-radius: 6px; background: var(--surface-3); }
+  .factions { display: flex; gap: 6px; }
+  .fdetail { border-top: 1px dashed var(--border); padding: 14px 16px 16px 20px; background: var(--surface-2); }
+  .evlist { display: grid; gap: 6px; }
+  .ev { display: grid; grid-template-columns: 70px 140px minmax(0, 1fr); gap: 10px; font-size: 12.5px; align-items: baseline; }
+  .ev .t { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .ev .h { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev .m { overflow-wrap: anywhere; }
+  .ev .ctx { font-size: 11px; color: var(--muted); font-style: italic; }
+  .group-head { display: flex; align-items: center; gap: 10px; margin: 26px 0 10px; }
+  .group-head h3 { margin: 0; font-size: 14px; }
+  .group-head p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  .note { font-size: 12.5px; color: var(--text-2); background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 9px; padding: 8px 10px; margin-top: 10px; overflow-wrap: anywhere; }
+  .note b { color: var(--text); }
+  .empty-row { padding: 26px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+
+  /* ---------- forms in findings */
+  .form { display: grid; gap: 12px; }
+  .form h4 { margin: 0; font-size: 14px; }
+  .opts { display: grid; gap: 6px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; font-size: 13px; }
+  .opt:hover { border-color: var(--border-strong); }
+  .opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+  .opt input { margin-top: 3px; accent-color: var(--accent); }
+  .opt .desc { color: var(--muted); font-size: 12px; }
+  .opt.sub { margin-left: 26px; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+  .form .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .form .err { color: var(--bad); font-size: 12.5px; }
+  .form label.lbl { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 5px; }
+
+  /* ---------- timeline */
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-2); user-select: none; }
+  .switch input { appearance: none; width: 34px; height: 20px; border-radius: 99px; background: var(--surface-3); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+  .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .3); transition: transform .15s; }
+  .switch input:checked { background: var(--accent); }
+  .switch input:checked::after { transform: translateX(14px); }
+  .tl { position: relative; }
+  .tl-day { position: sticky; top: 60px; z-index: 2; margin: 14px 0 6px; padding: 6px 0; font-size: 12px; font-weight: 700; color: var(--muted);
+            background: linear-gradient(var(--surface) 70%, transparent); }
+  .tl-row { display: grid; grid-template-columns: 18px 76px minmax(0, 150px) minmax(0, 1fr); gap: 10px; padding: 8px 6px; border-radius: 9px; align-items: baseline; font-size: 13px; }
+  .tl-row:hover { background: var(--surface-2); }
+  .tl-row .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; background: var(--faint); justify-self: center; }
+  .tl-row.flag .dot { background: var(--critical); box-shadow: 0 0 0 4px color-mix(in srgb, var(--critical) 18%, transparent); }
+  .tl-row .t { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .tl-row .h { font-family: var(--mono); font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-row .m { overflow-wrap: anywhere; }
+  .tl-row .k { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-right: 6px; }
+  .more { display: flex; justify-content: center; margin-top: 14px; }
+
+  /* ---------- custody */
+  .banner { display: flex; gap: 14px; align-items: center; padding: 16px 18px; border-radius: var(--radius); border: 1px solid; margin-bottom: 18px; }
+  .banner.ok { border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); }
+  .banner.bad { border-color: color-mix(in srgb, var(--bad) 40%, transparent); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); }
+  .banner .big { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; color: #fff; }
+  .banner.ok .big { background: var(--ok); } .banner.bad .big { background: var(--bad); }
+  .banner h3 { margin: 0; font-size: 15px; }
+  .banner p { margin: 2px 0 0; color: var(--text-2); font-size: 12.5px; overflow-wrap: anywhere; }
+  .banner .grow { flex: 1; min-width: 0; }
+  .ledger { display: grid; }
+  .entry { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--border); align-items: center; }
+  .entry:last-child { border-bottom: 0; }
+  .entry .eico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; color: var(--c); background: color-mix(in srgb, var(--c) 13%, transparent); }
+  .entry .what { font-weight: 600; font-size: 13px; }
+  .entry .detail { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .entry .right { text-align: right; font-size: 11.5px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+  tr:last-child td { border-bottom: 0; }
   .scroll { overflow-x: auto; }
-  .timeline { max-height: 520px; overflow: auto; border-top: 1px solid var(--line); }
-  .ev { display: grid; grid-template-columns: 74px 120px 110px 1fr; gap: 10px; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; align-items: baseline; }
-  .ev.flag { border-left: 3px solid var(--critical); background: color-mix(in srgb, var(--critical) 6%, transparent); }
-  .ev.hl { background: color-mix(in srgb, var(--accent) 18%, transparent); }
-  .ev .msg { word-break: break-word; }
-  .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
-  .tools label { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
-  .chip { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; margin: 1px 2px 1px 0; }
-  .chip.ext { border-color: var(--critical); color: var(--critical); }
-  .problems { color: var(--critical); margin: 8px 0 0; }
-  .ident { padding: 4px 0; font-size: 13px; }
-  .ident .aliases { font-size: 11px; margin: 2px 0 0 2px; }
-  .card.posture, .card.suppressed { border-style: dashed; }
-  button.small { padding: 3px 9px; font-size: 12px; }
-  input[type=text], input[type=search], textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
-  input[type=text]:focus, input[type=search]:focus, textarea:focus { outline: none; border-color: var(--accent); }
-  .examiner { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-  .examiner input { width: 150px; }
-  .verify { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-  .verify .when { color: var(--muted); font-size: 11px; }
-  tr.form td { background: var(--panel-2); }
-  /* Log text is attacker-controlled: a long Base64 payload or path must not widen the layout. */
-  tr.finding td:nth-child(3), .ev .msg, .note, .supform .cond { overflow-wrap: anywhere; }
-  tr.finding td:nth-child(1), tr.finding td:nth-child(2), tr.finding td:nth-child(6) { white-space: nowrap; }
-  .supform { display: grid; gap: 10px; padding: 4px 2px; }
-  .supform fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0; padding: 8px 10px; min-width: 0; }
-  .supform legend { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 0 4px; }
-  .supform label { display: flex; gap: 8px; align-items: baseline; font-size: 13px; padding: 2px 0; }
-  .supform .cond { font-family: var(--mono); font-size: 12px; word-break: break-all; }
-  .supform textarea { width: 100%; min-height: 54px; resize: vertical; }
-  .supform .actions { display: flex; gap: 8px; align-items: center; }
-  .supform .err { color: var(--critical); font-size: 12px; }
-  .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
-  @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } .chain { grid-template-columns: repeat(4, minmax(0,1fr)); } }
-  @media (max-width: 720px) {
-    .layout { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); }
-    main { padding: 16px; } .chain { grid-template-columns: repeat(2, minmax(0,1fr)); }
-    .ev { grid-template-columns: 64px 1fr; } .ev .src, .ev .kind { display: none; }
-    header .sub { display: none; }
-    header { flex-wrap: wrap; } .examiner input { width: 110px; }
-    tr.finding td:nth-child(4), tr.finding td:nth-child(5), tr.fhead th:nth-child(4), tr.fhead th:nth-child(5) { display: none; }
+
+  /* ---------- states: loading, empty, toasts */
+  .skel { border-radius: 10px; background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .empty { max-width: 520px; margin: 70px auto; text-align: center; }
+  .empty .art { width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 22px; display: grid; place-items: center; color: #fff;
+                background: linear-gradient(135deg, var(--accent), #6366f1); box-shadow: var(--shadow-lg); }
+  .empty .art .ico { width: 36px; height: 36px; }
+  .empty h2 { margin: 0 0 6px; font-size: 20px; }
+  .empty p { color: var(--muted); margin: 0 0 18px; }
+  .code { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 10px;
+          background: var(--surface-2); border: 1px solid var(--border); font-family: var(--mono); font-size: 13px; text-align: left; }
+  .toasts { position: fixed; right: 18px; bottom: 18px; z-index: 50; display: grid; gap: 8px; max-width: min(420px, calc(100vw - 36px)); }
+  .toast { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border);
+           box-shadow: var(--shadow-lg); font-size: 13px; animation: pop .18s ease-out; }
+  .toast .ico { color: var(--c); margin-top: 1px; }
+  @keyframes pop { from { transform: translateY(8px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* ---------- responsive */
+  @media (max-width: 1180px) { .grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); } .chain { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (max-width: 980px) { .grid-2 { grid-template-columns: 1fr; } main { padding: 22px 20px 50px; } .shell { grid-template-columns: 240px minmax(0, 1fr); } }
+  @media (max-width: 760px) {
+    /* minmax(0, ...) and min-width: 0 let the scrolling case row shrink instead of widening the page. */
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .sidebar { border-right: 0; border-bottom: 1px solid var(--border); padding: 12px 16px; min-width: 0; }
+    .side-title { display: none; }
+    .case-list { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+    .case-card { min-width: 230px; border-color: var(--border); }
+    main { padding: 18px 16px 50px; }
+    .topbar { padding: 0 16px; gap: 8px; }
+    .brand small, .examiner-label { display: none; }
+    .examiner { width: 140px; }
+    .case-head h1 { font-size: 20px; }
+    .grid-kpi { gap: 10px; }
+    .kpi { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .fmain { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 12px 12px 12px 16px; }
+    .factions { justify-content: flex-start; }
+    .ev { grid-template-columns: 62px minmax(0, 1fr); } .ev .h { display: none; }
+    .tl-row { grid-template-columns: 14px 64px minmax(0, 1fr); } .tl-row .h { display: none; }
+    .entry { grid-template-columns: 32px minmax(0, 1fr); } .entry .right { grid-column: 2; text-align: left; }
+    .tl-day { top: 60px; }
   }
 </style>
 </head>
 <body>
-<header>
-  <div class="logo">Trace<span>Vault</span></div>
-  <div class="sub">Evidence-first incident triage</div>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div>TraceVault<small>Evidence-first incident triage</small></div>
+  </div>
   <div class="spacer"></div>
-  <label class="examiner">Examiner <input type="text" id="examiner" maxlength="80" placeholder="your name" autocomplete="name"></label>
-  <button id="reanalyze" hidden>Re-run analysis</button>
-  <button id="report" class="primary" hidden>Open report</button>
+  <label class="field examiner" title="Your name is written to the custody ledger with every action">
+    <span class="examiner-ico" aria-hidden="true"></span>
+    <input id="examiner" type="text" maxlength="80" placeholder="Examiner name" autocomplete="name" aria-label="Examiner name">
+  </label>
+  <button class="btn icon ghost" id="theme" type="button" aria-label="Toggle light or dark theme"></button>
 </header>
-<div class="layout">
-  <aside><h3>Cases</h3><div id="cases"></div></aside>
-  <main id="main"><div class="empty">Loading cases...</div></main>
+<div class="shell">
+  <aside class="sidebar" aria-label="Cases">
+    <div class="side-title"><span>Cases</span><span id="case-count"></span></div>
+    <div class="case-list" id="cases"></div>
+  </aside>
+  <main id="main" aria-live="polite"></main>
 </div>
+<div class="toasts" id="toasts" role="status"></div>
 
 <script>
-const SEV = ["low", "medium", "high", "critical"];
+// ===================================================================== basics
+const SEV = ["critical", "high", "medium", "low"];
+const SEV_LABEL = { critical: "Critical", high: "High", medium: "Medium", low: "Low" };
 const STATUS_SEV = { created: "critical", compromised: "high", targeted: "medium", involved: "low" };
+const STATUS_LABEL = { created: "Created by attacker", compromised: "Compromised", targeted: "Targeted", involved: "Involved" };
 const PAGE = 200;
-// Fields offered when scoping a suppression ("all findings of this rule where ...").
 const SCOPE_FIELDS = ["source_image", "process", "parent_process", "target_image", "service_name", "image_path",
   "task_name", "target_object", "command_line", "event_name", "operation", "user_agent", "actor", "user", "host", "src_ip"];
-const sevColor = s => `var(--${s || "line"})`;
+const TABS = ["overview", "findings", "timeline", "custody"];
 const $ = (sel, el = document) => el.querySelector(sel);
 // Log content is attacker-controlled: everything rendered goes through esc().
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const sevVar = s => `var(--${SEV.includes(s) ? s : "faint"})`;
 const time = iso => iso ? iso.slice(11, 19) : "-";
-let current = null;
-let state = { sev: "all", mode: "flagged", selected: null, suppressFor: null, page: null, q: "" };
+const day = iso => {
+  try { return new Date(iso).toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }); }
+  catch { return iso.slice(0, 10); }
+};
+const fmt = n => Number(n).toLocaleString();
+
+// Inline icons (stroke paths), so the page needs nothing from the network.
+const ICONS = {
+  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  alert: '<path d="M10.3 4.2L2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  activity: '<path d="M3 12h4l3 8 4-16 3 8h4"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M21.5 20c0-2.8-1.7-4.9-4.2-5.7"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  external: '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  check: '<path d="M5 12l5 5 9-10"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 9 6 9 6a16 16 0 0 1-2.6 3.3"/><path d="M6.6 6.6C4.1 8.3 3 12 3 12s4 6 9 6a9 9 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/>',
+  server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  play: '<path d="M7 4v16l13-8z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+};
+const icon = (name, cls = "ico") => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+$(".brand-mark").innerHTML = icon("shield");
+$(".examiner-ico").innerHTML = icon("user");
 
 const store = {
   get(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
 };
+
+// ===================================================================== theme
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $("#theme").innerHTML = icon(t === "dark" ? "sun" : "moon");
+  $("#theme").title = t === "dark" ? "Switch to light theme" : "Switch to dark theme";
+}
+const systemDark = () => window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+applyTheme(store.get("tv.theme") || (systemDark() ? "dark" : "light"));
+$("#theme").onclick = () => { const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; store.set("tv.theme", t); applyTheme(t); };
+
+// ===================================================================== toasts & helpers
+function toast(msg, kind = "ok") {
+  const c = { ok: "var(--ok)", error: "var(--bad)", info: "var(--accent)" }[kind] || "var(--accent)";
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.style.setProperty("--c", c);
+  el.innerHTML = `${icon(kind === "error" ? "alert" : kind === "info" ? "activity" : "check")}<div>${esc(msg)}</div>`;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), kind === "error" ? 7000 : 4000);
+}
+
 $("#examiner").value = store.get("tv.examiner");
 $("#examiner").onchange = e => store.set("tv.examiner", e.target.value.trim());
-
 function examiner() {
   const name = $("#examiner").value.trim();
-  if (!name) { $("#examiner").focus(); throw new Error("Enter your examiner name first - it is written to the custody ledger."); }
+  if (!name) { $("#examiner").focus(); throw new Error("Enter your examiner name first (top right). It is written to the custody ledger."); }
+  store.set("tv.examiner", name);
   return name;
 }
 
@@ -153,249 +424,334 @@ async function api(path, opts) {
 }
 const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
 const caseUrl = (suffix = "") => `/api/cases/${encodeURIComponent(current.case.id)}${suffix}`;
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast("Copied to clipboard", "info"); }
+  catch { toast("Could not copy - select the text and copy it manually", "error"); }
+}
 
-async function loadCases(selectId) {
-  const cases = await api("/api/cases");
+// ===================================================================== state & routing
+let current = null;
+let cases = [];
+const fresh = () => ({ tab: "overview", sev: "all", tactic: null, q: "", expanded: new Set(), suppressFor: null, restoreFor: null,
+                       tl: { flagged: true, q: "", page: null } });
+let state = fresh();
+
+function parseHash() {
+  let h = "";
+  try { h = decodeURIComponent(location.hash.slice(1)); } catch { /* malformed */ }
+  const [id, tab] = h.split("/");
+  return { id, tab: TABS.includes(tab) ? tab : null };
+}
+function writeHash() {
+  if (!current) return;
+  try { history.replaceState(null, "", `#${encodeURIComponent(current.case.id)}${state.tab === "overview" ? "" : "/" + state.tab}`); } catch { /* sandboxed */ }
+}
+
+async function loadCases(selectId, tab) {
+  if (!current) $("#main").innerHTML = skeleton();
+  cases = await api("/api/cases");
+  $("#case-count").textContent = cases.length ? cases.length : "";
   const box = $("#cases");
-  if (!cases.length) {
-    box.innerHTML = "";
-    $("#main").innerHTML = `<div class="empty">No cases yet.<br><br>Run <span class="mono">tracevault demo</span> to load the sample breaches.</div>`;
-    return;
-  }
-  box.innerHTML = cases.map(c => `
-    <div class="case-item" data-id="${esc(c.id)}">
+  if (!cases.length) { box.innerHTML = ""; $("#main").innerHTML = emptyState(); bindEmpty(); return; }
+  box.innerHTML = cases.map(c => {
+    const risk = c.risk || { score: 0, level: "low" };
+    return `<button class="case-card" type="button" data-id="${esc(c.id)}">
       <div class="cid">${esc(c.id)}</div>
       <div class="ct">${esc(c.title)}</div>
-      <div class="muted" style="font-size:12px">${c.risk ? `<span class="sev" style="--c:${sevColor(c.risk.level)}">${esc(c.risk.level)}</span> ${c.risk.score}/100 &middot; ${c.findings} findings${c.suppressed_findings ? ` &middot; ${c.suppressed_findings} suppressed` : ""}` : "not analysed"}</div>
-    </div>`).join("");
-  box.querySelectorAll(".case-item").forEach(el => el.onclick = () => openCase(el.dataset.id));
-  await openCase(selectId && cases.some(c => c.id === selectId) ? selectId : cases[0].id);
+      ${c.risk ? `<div class="meter"><i style="width:${Number(risk.score)}%;background:${sevVar(risk.level)}"></i></div>
+      <div class="cm"><span><span class="badge" style="--c:${sevVar(risk.level)}">${esc(risk.level)}</span> ${Number(risk.score)}/100</span>
+        <span>${fmt(c.findings)} findings</span></div>` : `<div class="cm"><span>Not analysed yet</span></div>`}
+    </button>`;
+  }).join("");
+  box.querySelectorAll(".case-card").forEach(el => el.onclick = () => openCase(el.dataset.id));
+  await openCase(selectId && cases.some(c => c.id === selectId) ? selectId : cases[0].id, { tab });
 }
 
-async function openCase(id, keepView = false) {
-  document.querySelectorAll(".case-item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+async function openCase(id, { keep = false, tab = null } = {}) {
+  document.querySelectorAll(".case-card").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+  const sameCase = current && current.case.id === id;
   current = await api(`/api/cases/${encodeURIComponent(id)}`);
-  // The open case lives in the URL (#CASE-002), so a case can be linked to and survives reload.
-  try { history.replaceState(null, "", "#" + encodeURIComponent(id)); } catch { /* sandboxed frame */ }
-  if (!keepView) state = { ...state, selected: null, suppressFor: null, mode: "flagged", page: null, q: "" };
-  else state = { ...state, selected: null, suppressFor: null };
-  $("#reanalyze").hidden = false;
-  $("#report").hidden = !current.analysis;
+  if (!keep || !sameCase) { const t = tab || (sameCase ? state.tab : "overview"); state = fresh(); state.tab = t; }
+  else { state.suppressFor = null; state.restoreFor = null; state.tl.page = null; }
+  writeHash();
   render();
+  if (state.tab === "timeline" && !state.tl.flagged) loadPage(false);
 }
+async function reloadCurrent() { await loadCases(current.case.id, state.tab); }
+
+function setTab(tab) { state.tab = tab; writeHash(); render(); window.scrollTo({ top: 0 }); if (tab === "timeline" && !state.tl.flagged && !state.tl.page) loadPage(false); }
 
 async function loadPage(append) {
-  const offset = append && state.page ? state.page.events.length : 0;
-  const r = await api(caseUrl(`/events?offset=${offset}&limit=${PAGE}&q=${encodeURIComponent(state.q)}`));
-  state.page = append && state.page ? { total: r.total, events: state.page.events.concat(r.events) } : { total: r.total, events: r.events };
-  render();
+  const offset = append && state.tl.page ? state.tl.page.events.length : 0;
+  try {
+    const r = await api(caseUrl(`/events?offset=${offset}&limit=${PAGE}&q=${encodeURIComponent(state.tl.q)}`));
+    state.tl.page = append && state.tl.page ? { total: r.total, events: state.tl.page.events.concat(r.events) } : r;
+    render();
+  } catch (err) { toast(err.message, "error"); }
 }
 
-function findingRow(f, idx, eventsById) {
-  const sup = f.suppressed;
-  return `
-    <tr class="finding ${idx === state.selected ? "sel" : ""}" data-idx="${idx}">
-      <td class="mono">${time(f.ts)}</td>
-      <td><span class="sev" style="--c:${sevColor(f.severity)}">${esc(f.severity)}</span></td>
-      <td><b>${esc(f.title)}</b><div class="muted" style="font-size:12px">${esc(f.summary)}</div>
-        ${sup ? `<div class="note"><b>${esc(sup.id)}</b> ${sup.verdict === "false_positive" ? "False positive" : "Expected activity"} &middot; ${esc(sup.reason)} &middot; ${esc(sup.by)}</div>` : ""}</td>
-      <td class="mono">${esc(f.technique)}<div class="muted">${esc(f.tactic)}</div></td>
-      <td>${[...f.entities.hosts, ...f.entities.users, ...f.entities.ips].map(x => `<span class="chip">${esc(x)}</span>`).join("")}</td>
-      <td>${sup ? `<button class="small" data-restore="${esc(sup.id)}">Restore</button>` : `<button class="small" data-suppress="${idx}">Suppress</button>`}</td>
-    </tr>
-    ${state.suppressFor === idx ? `<tr class="form"><td colspan="6">${suppressForm(f, eventsById)}</td></tr>` : ""}`;
+// ===================================================================== small views
+function skeleton() {
+  return `<div class="skel" style="height:14px;width:120px"></div><div class="skel" style="height:30px;width:55%;margin:10px 0 24px"></div>
+    <div class="grid-kpi">${"<div class='skel' style='height:96px'></div>".repeat(4)}</div>
+    <div class="grid-2"><div class="skel" style="height:320px"></div><div class="skel" style="height:320px"></div></div>`;
 }
-
-function scopeCandidates(f, eventsById) {
-  const ctx = new Set(f.context_event_ids || []);
-  const ev = f.event_ids.map(id => eventsById[id]).find(e => e && !ctx.has(e.id));
-  if (!ev) return [];
-  const value = k => ["host", "user", "src_ip"].includes(k) ? ev[k] : ev.fields[k];
-  return SCOPE_FIELDS.filter(k => value(k) !== null && value(k) !== undefined && value(k) !== "")
-    .map(k => ({ field: k, value: String(value(k)) }));
+function emptyState() {
+  return `<div class="empty"><div class="art">${icon("shield")}</div>
+    <h2>No cases yet</h2>
+    <p>Load the two bundled sample breaches to explore TraceVault, or open a case of your own with <span class="mono">tracevault case-new</span>.</p>
+    <div class="code"><span>tracevault demo</span><button class="btn sm ghost" type="button" data-copy="tracevault demo">${icon("copy")} Copy</button></div>
+    <p style="margin-top:14px;font-size:12.5px">Then refresh this page.</p></div>`;
 }
-
-function suppressForm(f, eventsById) {
-  const cands = scopeCandidates(f, eventsById);
-  return `<form class="supform" id="supform">
-    <div><b>Suppress ${esc(f.rule_id)} &middot; ${esc(f.title)}</b>
-      <div class="note">Recorded in the custody ledger with your name and reason, shown in the report, and reversible.</div></div>
-    <fieldset><legend>Verdict</legend>
-      <label><input type="radio" name="verdict" value="false_positive" checked> False positive &mdash; the rule was wrong</label>
-      <label><input type="radio" name="verdict" value="expected_activity"> Expected activity &mdash; real, but authorized (admin task, pentest)</label>
-    </fieldset>
-    <fieldset><legend>Scope</legend>
-      <label><input type="radio" name="scope" value="finding" checked> Only this finding</label>
-      <label><input type="radio" name="scope" value="where" ${cands.length ? "" : "disabled"}> Every ${esc(f.rule_id)} finding where all checked values match:</label>
-      ${cands.map((c, i) => `<label style="padding-left:24px"><input type="checkbox" name="cond" value="${i}"><span class="cond">${esc(c.field)} = ${esc(c.value)}</span></label>`).join("")}
-    </fieldset>
-    <label style="display:block"><span class="muted" style="font-size:12px">Reason (required)</span>
-      <textarea name="reason" maxlength="2000" placeholder="e.g. Azure VM agent collecting logs; confirmed with cloud team"></textarea></label>
-    <div class="actions"><button type="submit" class="primary small">Suppress &amp; re-analyse</button>
-      <button type="button" class="small" id="supcancel">Cancel</button><span class="err" id="superr"></span></div>
-  </form>`;
+function bindEmpty() { document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyText(b.dataset.copy)); }
+function gauge(score, level) {
+  const r = 26, c = 2 * Math.PI * r, v = Math.max(0, Math.min(100, Number(score) || 0));
+  return `<div class="gauge"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="7"/>
+      <circle cx="32" cy="32" r="${r}" fill="none" stroke="${sevVar(level)}" stroke-width="7" stroke-linecap="round"
+        stroke-dasharray="${(c * v / 100).toFixed(1)} ${c.toFixed(1)}"/></svg><b>${v}</b></div>`;
 }
+const initials = name => esc(String(name).replace(/[^A-Za-z0-9]/g, " ").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2) || "?");
 
+// ===================================================================== main render
 function render() {
-  const { case: c, analysis: a, verification: v, ledger, suppressions: sups } = current;
+  const { case: c, analysis: a, verification: v } = current;
   const main = $("#main");
   const checked = v.checked_at ? v.checked_at.replace("T", " ").slice(0, 16) + " UTC" : "";
+  const counts = a ? {
+    findings: a.stats.findings,
+    timeline: a.timeline_total, custody: current.ledger.length,
+  } : { custody: current.ledger.length };
   const head = `
+    <div class="crumbs">Cases ${icon("chevron")} <span class="mono">${esc(c.id)}</span></div>
     <div class="case-head">
-      <div><h1>${esc(c.title)}</h1>
-        <div class="meta"><span class="mono">${esc(c.id)}</span> &middot; examiner ${esc(c.examiner)} &middot; opened ${esc(c.created_at)}</div></div>
-      <div class="verify"><span class="integrity ${v.ok ? "ok" : "bad"}">${v.ok ? "&#10003; Evidence integrity verified" : "&#9888; Integrity check failed"}</span>
-        <span class="when">checked ${esc(checked)}</span><button class="small" id="reverify">Re-verify</button></div>
+      <div style="min-width:0">
+        <h1>${esc(c.title)}</h1>
+        <div class="meta"><span>${icon("user")} ${esc(c.examiner)}</span><span>${icon("clock")} opened ${esc(c.created_at.replace("T", " ").slice(0, 16))} UTC</span>
+          ${a ? `<span>${icon("file")} ${Object.keys(a.stats.by_source).length} evidence files</span>` : ""}</div>
+      </div>
+      <div class="head-actions">
+        <span class="pill ${v.ok ? "ok" : "bad"}" title="Checked ${esc(checked)}">${icon(v.ok ? "shield" : "alert")} ${v.ok ? "Integrity verified" : "Integrity check failed"}</span>
+        <button class="btn" type="button" id="reanalyze">${icon("refresh")} Re-run analysis</button>
+        ${a ? `<a class="btn primary" href="${esc(caseUrl("/report"))}" target="_blank" rel="noopener">${icon("external")} Open report</a>` : ""}
+      </div>
+    </div>
+    <div class="tabs" role="tablist">
+      ${TABS.map(t => `<button class="tab" role="tab" type="button" data-tab="${t}" aria-selected="${state.tab === t}">
+        ${icon({ overview: "target", findings: "flag", timeline: "list", custody: "lock" }[t])}
+        ${t[0].toUpperCase() + t.slice(1)}${counts[t] !== undefined ? ` <span class="n">${fmt(counts[t])}</span>` : ""}</button>`).join("")}
     </div>`;
   if (!a) {
-    main.innerHTML = head + `<div class="card" style="margin-top:16px">${ledger.length} ledger entries. This case has not been analysed yet &mdash; click <b>Re-run analysis</b>.</div>`;
+    main.innerHTML = head + `<div class="empty"><div class="art">${icon("play")}</div><h2>Not analysed yet</h2>
+      <p>The evidence is in the case. Run the analysis to build the timeline and findings.</p>
+      <button class="btn primary" type="button" id="reanalyze2">${icon("play")} Run analysis</button></div>`;
+    $("#reanalyze2").onclick = reanalyze;
+    if (state.tab === "custody") main.innerHTML = head + custodyView();
     bindCommon();
     return;
   }
-  const s = a.stats, r = a.risk;
-  const eventsById = Object.fromEntries(a.finding_events.map(e => [e.id, e]));
-  const dwell = s.dwell ? `${time(s.dwell[0]).slice(0,5)} &rarr; ${time(s.dwell[1]).slice(0,5)}` : "-";
-  const live = f => !f.suppressed;
-  const isAttack = f => (f.category || "attack") === "attack";
-  const indexed = a.findings.map((f, i) => [f, i]);
-  const attack = indexed.filter(([f]) => live(f) && isAttack(f) && (state.sev === "all" || f.severity === state.sev));
-  const posture = indexed.filter(([f]) => live(f) && !isAttack(f));
-  const suppressed = indexed.filter(([f]) => !live(f));
-  const sel = state.selected != null ? a.findings[state.selected] : null;
-  const hl = new Set(sel ? sel.event_ids : []);
+  const body = { overview: overviewView, findings: findingsView, timeline: timelineView, custody: custodyView }[state.tab]();
+  main.innerHTML = head + `<div class="tabpanel" role="tabpanel">${body}</div>`;
+  bindCommon();
+  ({ overview: bindOverview, findings: bindFindings, timeline: bindTimeline, custody: bindCustody })[state.tab]();
+}
 
-  let events, timelineLabel, tools;
-  if (sel) {
-    events = sel.event_ids.map(id => eventsById[id]).filter(Boolean);
-    timelineLabel = `${events.length} evidence events`;
-    tools = `<span>Evidence for <b>${esc(sel.title)}</b></span><button class="small" id="clearSel">Back to timeline</button>`;
-  } else if (state.mode === "all") {
-    events = state.page ? state.page.events : [];
-    timelineLabel = state.page ? `${events.length} of ${state.page.total.toLocaleString()}${state.q ? " matching" : ""} events` : "loading...";
-    tools = `<label><input type="checkbox" id="flagOnly"> Flagged events only</label>
-      <input type="search" id="q" placeholder="Search message, host, user, kind, IP" value="${esc(state.q)}" style="flex:1;min-width:160px">`;
-  } else {
-    events = a.finding_events.filter(e => e.rules.length);
-    timelineLabel = `${events.length} flagged of ${a.timeline_total.toLocaleString()} events`;
-    tools = `<label><input type="checkbox" id="flagOnly" checked> Flagged events only</label>`;
-  }
-  const more = !sel && state.mode === "all" && state.page && events.length < state.page.total;
+function bindCommon() {
+  document.querySelectorAll(".tab").forEach(b => b.onclick = () => setTab(b.dataset.tab));
+  const r = $("#reanalyze"); if (r) r.onclick = reanalyze;
+}
 
-  main.innerHTML = head + `
-    <div class="kpis">
-      <div class="kpi"><div class="label">Risk score</div><div class="value" style="color:${sevColor(r.level)}">${r.score}<span class="muted" style="font-size:14px">/100</span></div>
-        <div class="gauge"><div style="width:${r.score}%;background:${sevColor(r.level)}"></div></div></div>
-      <div class="kpi"><div class="label">Findings</div><div class="value">${s.findings}</div>
-        <div class="hint">${SEV.slice().reverse().map(x => `${s.by_severity[x]} ${x}`).join(" &middot; ")}${s.posture_findings ? ` &middot; +${s.posture_findings} posture` : ""}${s.suppressed_findings ? ` &middot; ${s.suppressed_findings} suppressed` : ""}</div></div>
-      <div class="kpi"><div class="label">Events</div><div class="value">${s.events.toLocaleString()}</div><div class="hint">${s.flagged_events} flagged across ${Object.keys(s.by_source).length} artifacts</div></div>
-      <div class="kpi"><div class="label">Attacker window (UTC)</div><div class="value" style="font-size:22px">${dwell}</div><div class="hint">${s.dwell ? esc(s.dwell[0].slice(0,10)) : ""}</div></div>
+// ===================================================================== overview
+function overviewView() {
+  const a = current.analysis, s = a.stats, r = a.risk;
+  const dwell = s.dwell ? `${time(s.dwell[0]).slice(0, 5)} → ${time(s.dwell[1]).slice(0, 5)}` : "—";
+  const idents = a.identities || [];
+  const people = idents.filter(i => i.status !== "targeted");
+  const targeted = idents.filter(i => i.status === "targeted");
+  const steps = a.narrative.filter(l => !/^(Compromised identities|Accounts created by the attacker):/.test(l));
+  const callouts = [];
+  for (const i of idents.filter(i => i.status === "compromised"))
+    callouts.push({ c: "var(--high)", ic: "user", html: `<b>${esc(i.identity)}</b> was compromised across ${esc(i.systems.join(", "))}.` });
+  for (const i of idents.filter(i => i.status === "created"))
+    callouts.push({ c: "var(--critical)", ic: "plus", html: `The attacker created the account <b>${esc(i.identity)}</b> (${esc(i.systems.join(", "))}).` });
+
+  return `
+    <div class="grid-kpi">
+      <div class="card kpi">${gauge(r.score, r.level)}<div><div class="label">Risk score</div>
+        <div class="value" style="color:${sevVar(r.level)}">${esc(SEV_LABEL[r.level] || r.level)}</div><div class="hint">out of 100</div></div></div>
+      <div class="card kpi" style="--c:var(--critical)"><div class="kicon">${icon("flag")}</div><div><div class="label">Findings</div>
+        <div class="value">${fmt(s.findings)}</div><div class="hint">${s.by_severity.critical} critical · ${s.by_severity.high} high${s.suppressed_findings ? ` · ${s.suppressed_findings} suppressed` : ""}</div></div></div>
+      <div class="card kpi" style="--c:var(--low)"><div class="kicon">${icon("activity")}</div><div><div class="label">Events analysed</div>
+        <div class="value">${fmt(s.events)}</div><div class="hint">${fmt(s.flagged_events)} flagged</div></div></div>
+      <div class="card kpi" style="--c:var(--medium)"><div class="kicon">${icon("clock")}</div><div><div class="label">Attacker window (UTC)</div>
+        <div class="value" style="font-size:22px">${esc(dwell)}</div><div class="hint">${s.dwell ? esc(day(s.dwell[0])) : "no attacker activity"}</div></div></div>
     </div>
 
-    <div class="grid2">
-      <div class="card"><h2>Storyline</h2><ul class="story">${a.narrative.map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>
-      <div class="card"><h2>Indicators of compromise</h2>
-        <div class="muted" style="font-size:11px;margin-bottom:4px">IP ADDRESSES</div>
-        ${a.iocs.ips.map(x => `<span class="chip ${x.external ? "ext" : ""}" title="${x.external ? "external" : "internal"}">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
-        <div class="muted" style="font-size:11px;margin:10px 0 4px">IDENTITIES</div>
-        ${(a.identities || []).map(i => `
-          <div class="ident">
-            <span class="sev" style="--c:${sevColor(STATUS_SEV[i.status])}">${esc(i.status)}</span>
-            <b>${esc(i.identity)}</b> <span class="muted">${esc(i.systems.join(", "))}</span>
-            ${i.aliases.length > 1 ? `<div class="muted aliases">linked ${esc(i.linked_by)}: ${i.aliases.map(x => `<span class="mono">${esc(x)}</span>`).join(", ")}</div>` : ""}
-          </div>`).join("") || '<span class="muted">none</span>'}
-        <div class="muted" style="font-size:11px;margin:10px 0 4px">HOSTS &amp; TENANTS</div>
-        ${a.iocs.hosts.map(x => `<span class="chip">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
+    <div class="grid-2">
+      <div class="card">
+        <h2>${icon("target")} What happened</h2>
+        <p class="sub">Built only from findings, in attack order. Every line traces back to evidence.</p>
+        ${callouts.length ? `<div class="callouts">${callouts.map(x => `<div class="callout" style="--c:${x.c}">${icon(x.ic)}<div>${x.html}</div></div>`).join("")}</div>` : ""}
+        <ol class="steps">${steps.map(l => {
+          const m = l.match(/^(.+?) - from (\d\d:\d\d) UTC: (.*)$/);
+          return m ? `<li><span class="tactic">${esc(m[1])}<span class="when">from ${esc(m[2])} UTC</span></span><p>${esc(m[3])}</p></li>`
+                   : `<li><p>${esc(l)}</p></li>`;
+        }).join("")}</ol>
+      </div>
+
+      <div class="card">
+        <h2>${icon("users")} People &amp; indicators</h2>
+        <p class="sub">Accounts are linked across systems into one identity.</p>
+        <div class="section-label">Identities</div>
+        <div class="people">${people.map(i => `
+          <div class="person"><div class="avatar" style="--c:${sevVar(STATUS_SEV[i.status])}">${initials(i.identity)}</div>
+            <div class="who"><div class="name">${esc(i.identity)} <span class="badge" style="--c:${sevVar(STATUS_SEV[i.status])}">${esc(STATUS_LABEL[i.status] || i.status)}</span></div>
+              <div class="sys">${esc(i.systems.join(" · "))}${i.aliases.length > 1 ? ` — also ${i.aliases.filter(x => x !== i.identity).map(esc).join(", ")}` : ""}</div></div>
+          </div>`).join("") || `<div class="muted">No identities involved.</div>`}</div>
+        ${targeted.length ? `<div class="section-label">Targeted only (${targeted.length})</div>
+          <div class="chips">${targeted.map(i => `<span class="chip">${esc(i.identity)}</span>`).join("")}</div>` : ""}
+        <div class="section-label">Attacker IPs</div>
+        <div class="chips">${a.iocs.ips.map(x => `<span class="chip ${x.external ? "danger" : ""}" title="${x.external ? "external" : "internal"}">${icon("globe")} ${esc(x.value)} <small>×${x.findings}</small></span>`).join("") || `<span class="muted">none</span>`}</div>
+        <div class="section-label">Hosts &amp; tenants</div>
+        <div class="chips">${a.iocs.hosts.map(x => `<span class="chip">${icon("server")} ${esc(x.value)} <small>×${x.findings}</small></span>`).join("") || `<span class="muted">none</span>`}</div>
       </div>
     </div>
 
-    <div class="card"><h2>MITRE ATT&amp;CK kill chain</h2>
-      <div class="chain">${a.attack_chain.map(t => `
-        <div class="tactic ${t.count ? "hit" : ""}" style="--sev:${sevColor(t.max_severity)}">
-          <div><b>${esc(t.tactic)}</b></div><div class="n">${t.count || ""}</div>
-          ${t.techniques.map(x => `<div class="tech" title="${esc(x.name)}">${esc(x.id)}</div>`).join("")}
-        </div>`).join("")}</div>
-    </div>
-
-    <div class="card"><h2>Findings <span class="count">${attack.length}</span></h2>
-      <div class="tools"><label>Severity <select id="sevFilter">
-        ${["all", ...SEV.slice().reverse()].map(x => `<option ${x === state.sev ? "selected" : ""}>${x}</option>`).join("")}
-      </select></label><span class="muted" style="font-size:12px">Click a finding to see its evidence. Suppress what you have reviewed as noise.</span></div>
-      <div class="scroll"><table>
-        <tr class="fhead"><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th><th></th></tr>
-        ${attack.map(([f, i]) => findingRow(f, i, eventsById)).join("") || `<tr><td colspan="6" class="muted">No findings${state.sev !== "all" ? " at this severity" : ""}.</td></tr>`}
-      </table></div>
-    </div>
-
-    ${posture.length ? `<div class="card posture"><h2>Security posture issues <span class="count">${posture.length}</span></h2>
-      <div class="note" style="margin-bottom:8px">Risky practices worth fixing. Not counted as attacker activity, the risk score, IOCs or the attacker window.</div>
-      <div class="scroll"><table>
-        <tr class="fhead"><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th><th></th></tr>
-        ${posture.map(([f, i]) => findingRow(f, i, eventsById)).join("")}
-      </table></div>
-    </div>` : ""}
-
-    ${suppressed.length || sups.revoked.length ? `<div class="card suppressed"><h2>Suppressed by analyst <span class="count">${suppressed.length}</span></h2>
-      <div class="note" style="margin-bottom:8px">Excluded from the storyline, risk score, IOCs and identities. Each decision is a custody-ledger entry and appears in the report.</div>
-      ${suppressed.length ? `<div class="scroll"><table>
-        <tr class="fhead"><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th><th></th></tr>
-        ${suppressed.map(([f, i]) => findingRow(f, i, eventsById)).join("")}
-      </table></div>` : ""}
-      ${sups.active.filter(x => !a.findings.some(f => f.suppressed && f.suppressed.id === x.id)).map(x =>
-        `<div class="note"><b>${esc(x.id)}</b> active but currently matches nothing: ${esc(x.reason)}</div>`).join("")}
-      ${sups.revoked.map(x => `<div class="note">Withdrawn <b>${esc(x.id)}</b> by ${esc(x.revoked_by)}: ${esc(x.revoke_reason)}</div>`).join("")}
-    </div>` : ""}
-
-    <div class="card"><h2>Super-timeline <span class="count">${timelineLabel}</span></h2>
-      <div class="tools">${tools}</div>
-      <div class="timeline">${events.map(e => `
-        <div class="ev ${e.rules.length ? "flag" : ""} ${hl.has(e.id) ? "hl" : ""}">
-          <span class="mono">${time(e.ts)}</span>
-          <span class="mono src muted" title="${esc(e.source)}">${esc(e.host)}</span>
-          <span class="mono kind">${esc(e.kind)}</span>
-          <span class="msg">${esc(e.message)} ${e.rules.map(rid => `<span class="chip">${esc(rid)}</span>`).join("")}</span>
-        </div>`).join("") || '<div class="ev"><span></span><span class="muted msg">No events.</span></div>'}</div>
-      ${more ? `<div class="tools" style="margin-top:10px"><button class="small" id="more">Load ${Math.min(PAGE, state.page.total - events.length)} more</button></div>` : ""}
-    </div>
-
-    <div class="card"><h2>Chain of custody <span class="count">${ledger.length} entries</span></h2>
-      <div class="muted" style="font-size:12px">Ledger head <span class="mono">${esc(v.head || "-")}</span></div>
-      ${v.problems.length ? `<ul class="problems">${v.problems.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
-      <div class="scroll" style="margin-top:10px"><table>
-        <tr><th>#</th><th>Time</th><th>Actor</th><th>Action</th><th>Subject</th><th>SHA-256</th><th>Status</th></tr>
-        ${ledger.map(e => { const ev = v.evidence.find(x => x.file === e.evidence); const d = e.details || {};
-          const subject = e.evidence || (d.id ? `${d.id}${d.rule_id ? " " + d.rule_id : ""}${d.reason ? " - " + d.reason : ""}` : "");
-          return `
-          <tr><td>${e.seq}</td><td class="mono">${esc(e.ts.replace("T", " ").slice(0, 19))}</td><td>${esc(e.actor)}</td>
-          <td class="mono">${esc(e.action)}</td><td>${esc(subject)}</td>
-          <td class="mono" title="${esc(e.sha256 || "")}">${esc((e.sha256 || "").slice(0, 16))}</td>
-          <td>${ev ? (ev.ok ? '<span style="color:var(--ok)">&#10003; match</span>' : '<span style="color:var(--critical)">&#10007; changed</span>') : ""}</td></tr>`; }).join("")}
-      </table></div>
+    <div class="card" style="margin-top:18px">
+      <h2>${icon("shield")} MITRE ATT&amp;CK kill chain</h2>
+      <p class="sub">Click a highlighted tactic to see its findings.</p>
+      <div class="chain">${a.attack_chain.map(t => t.count ? `
+        <button class="tactic-tile hit" type="button" data-tactic="${esc(t.tactic)}" style="--c:${sevVar(t.max_severity)}">
+          <b>${esc(t.tactic)}</b><span class="count">${t.count}</span>
+          <span class="techs">${t.techniques.map(x => `<span title="${esc(x.name)}">${esc(x.id)}</span>`).join(" ")}</span></button>` : `
+        <div class="tactic-tile"><b>${esc(t.tactic)}</b></div>`).join("")}</div>
     </div>`;
+}
+function bindOverview() {
+  document.querySelectorAll("[data-tactic]").forEach(b => b.onclick = () => { state.tactic = b.dataset.tactic; state.sev = "all"; setTab("findings"); });
+}
 
-  bindCommon();
-  $("#sevFilter").onchange = e => { state.sev = e.target.value; render(); };
-  main.querySelectorAll("tr.finding").forEach(tr => tr.onclick = ev => {
-    if (ev.target.closest("button")) return;
-    const idx = Number(tr.dataset.idx);
-    state.selected = state.selected === idx ? null : idx;
-    render();
-  });
-  main.querySelectorAll("[data-suppress]").forEach(b => b.onclick = () => {
-    const idx = Number(b.dataset.suppress);
-    state.suppressFor = state.suppressFor === idx ? null : idx;
-    render();
-  });
-  main.querySelectorAll("[data-restore]").forEach(b => b.onclick = () => restore(b.dataset.restore));
-  const flag = $("#flagOnly");
-  if (flag) flag.onchange = e => { state.mode = e.target.checked ? "flagged" : "all"; if (state.mode === "all") loadPage(false).catch(err => alert(err.message)); else render(); };
-  const q = $("#q");
-  if (q) q.onkeydown = e => { if (e.key === "Enter") { state.q = q.value.trim(); loadPage(false).catch(err => alert(err.message)); } };
-  const moreBtn = $("#more"); if (moreBtn) moreBtn.onclick = () => loadPage(true).catch(err => alert(err.message));
-  const clear = $("#clearSel"); if (clear) clear.onclick = () => { state.selected = null; render(); };
+// ===================================================================== findings
+function evidenceRows(f, byId) {
+  const ctx = new Set(f.context_event_ids || []);
+  return f.event_ids.map(id => byId[id]).filter(Boolean).map(e => `
+    <div class="ev"><span class="t">${time(e.ts)}</span><span class="h" title="${esc(e.source)}">${esc(e.host)}</span>
+      <span class="m">${esc(e.message)}${ctx.has(e.id) ? ` <span class="ctx">— context, not attributed to the attacker</span>` : ""}</span></div>`).join("");
+}
+function scopeCandidates(f, byId) {
+  const ctx = new Set(f.context_event_ids || []);
+  const ev = f.event_ids.map(id => byId[id]).find(e => e && !ctx.has(e.id));
+  if (!ev) return [];
+  const value = k => ["host", "user", "src_ip"].includes(k) ? ev[k] : ev.fields[k];
+  return SCOPE_FIELDS.filter(k => value(k) !== null && value(k) !== undefined && value(k) !== "").map(k => ({ field: k, value: String(value(k)) }));
+}
+function suppressForm(f, byId) {
+  const cands = scopeCandidates(f, byId);
+  return `<form class="form" id="supform" novalidate>
+    <h4>Suppress “${esc(f.title)}”</h4>
+    <div class="opts" role="radiogroup" aria-label="Verdict">
+      <label class="opt"><input type="radio" name="verdict" value="false_positive" checked><span><b>False positive</b><div class="desc">The rule was wrong about this activity.</div></span></label>
+      <label class="opt"><input type="radio" name="verdict" value="expected_activity"><span><b>Expected activity</b><div class="desc">Real, but authorized — an admin task or a pentest.</div></span></label>
+    </div>
+    <div class="opts" role="radiogroup" aria-label="Scope">
+      <label class="opt"><input type="radio" name="scope" value="finding" checked><span><b>Only this finding</b></span></label>
+      <label class="opt"><input type="radio" name="scope" value="where" ${cands.length ? "" : "disabled"}><span><b>Every ${esc(f.rule_id)} finding where…</b><div class="desc">all the values you tick below match</div></span></label>
+      ${cands.map((c, i) => `<label class="opt sub"><input type="checkbox" name="cond" value="${i}"><span>${esc(c.field)} = ${esc(c.value)}</span></label>`).join("")}
+    </div>
+    <div><label class="lbl" for="sup-reason">Reason (required — recorded in the custody ledger and the report)</label>
+      <textarea id="sup-reason" name="reason" maxlength="2000" placeholder="e.g. Azure VM agent collecting logs; confirmed with the cloud team"></textarea></div>
+    <div class="row"><button class="btn primary sm" type="submit">${icon("eyeoff")} Suppress &amp; re-analyse</button>
+      <button class="btn sm" type="button" id="supcancel">Cancel</button><span class="err" id="superr" role="alert"></span></div>
+  </form>`;
+}
+function restoreForm(sup) {
+  return `<form class="form" id="resform" novalidate>
+    <h4>Restore ${esc(sup.id)}</h4>
+    <div><label class="lbl" for="res-reason">Why is this finding relevant again? (recorded in the custody ledger)</label>
+      <textarea id="res-reason" name="reason" maxlength="2000" placeholder="e.g. The pentest scope did not include this host"></textarea></div>
+    <div class="row"><button class="btn primary sm" type="submit">${icon("undo")} Restore &amp; re-analyse</button>
+      <button class="btn sm" type="button" id="rescancel">Cancel</button><span class="err" id="reserr" role="alert"></span></div>
+  </form>`;
+}
+function findingCard(f, idx, byId) {
+  const sup = f.suppressed;
+  const open = state.expanded.has(idx) || state.suppressFor === idx || (sup && state.restoreFor === sup.id);
+  const ents = [...f.entities.hosts, ...f.entities.users, ...f.entities.ips];
+  return `<article class="finding ${open ? "open" : ""}" style="--c:${sevVar(f.severity)}">
+    <div class="fmain">
+      <div class="time">${time(f.ts)}</div>
+      <div style="min-width:0">
+        <div class="title"><span class="badge" style="--c:${sevVar(f.severity)}">${esc(f.severity)}</span>${esc(f.title)}</div>
+        <div class="summary">${esc(f.summary)}</div>
+        <div class="tags"><span class="tech" title="${esc(f.technique_name)}">${esc(f.technique)}</span><span class="muted" style="font-size:12px">${esc(f.tactic)}</span>
+          ${ents.slice(0, 4).map(x => `<span class="chip">${esc(x)}</span>`).join("")}${ents.length > 4 ? `<span class="chip">+${ents.length - 4}</span>` : ""}</div>
+        ${sup ? `<div class="note"><b>${esc(sup.id)} · ${sup.verdict === "false_positive" ? "False positive" : "Expected activity"}</b> — ${esc(sup.reason)} <span class="muted">(${esc(sup.by)})</span></div>` : ""}
+      </div>
+      <div class="factions">
+        <button class="btn sm" type="button" data-expand="${idx}" aria-expanded="${state.expanded.has(idx)}">${icon("list")} Evidence</button>
+        ${sup ? `<button class="btn sm" type="button" data-restore="${esc(sup.id)}">${icon("undo")} Restore</button>`
+              : `<button class="btn sm ghost" type="button" data-suppress="${idx}" title="Suppress after review">${icon("eyeoff")} Suppress</button>`}
+      </div>
+    </div>
+    ${open ? `<div class="fdetail">
+      ${state.expanded.has(idx) ? `<div class="section-label">Evidence (${f.event_ids.length} events)</div><div class="evlist">${evidenceRows(f, byId)}</div>
+        <p class="muted" style="font-size:12.5px;margin:10px 0 0">${esc(f.description)}</p>` : ""}
+      ${state.suppressFor === idx ? `<div style="${state.expanded.has(idx) ? "margin-top:16px" : ""}">${suppressForm(f, byId)}</div>` : ""}
+      ${sup && state.restoreFor === sup.id ? `<div style="${state.expanded.has(idx) ? "margin-top:16px" : ""}">${restoreForm(sup)}</div>` : ""}
+    </div>` : ""}
+  </article>`;
+}
+function findingsView() {
+  const a = current.analysis;
+  const byId = Object.fromEntries(a.finding_events.map(e => [e.id, e]));
+  const indexed = a.findings.map((f, i) => [f, i]);
+  const live = indexed.filter(([f]) => !f.suppressed);
+  const attackAll = live.filter(([f]) => (f.category || "attack") === "attack");
+  const q = state.q.toLowerCase();
+  const matchQ = f => !q || `${f.title} ${f.summary} ${f.rule_id} ${f.technique} ${f.tactic} ${[...f.entities.hosts, ...f.entities.users, ...f.entities.ips].join(" ")}`.toLowerCase().includes(q);
+  const attack = attackAll.filter(([f]) => (state.sev === "all" || f.severity === state.sev) && (!state.tactic || f.tactic === state.tactic) && matchQ(f));
+  const posture = live.filter(([f]) => (f.category || "attack") !== "attack" && matchQ(f));
+  const suppressed = indexed.filter(([f]) => f.suppressed && matchQ(f));
+  const sevCount = s => attackAll.filter(([f]) => f.severity === s && (!state.tactic || f.tactic === state.tactic)).length;
+  const revoked = current.suppressions.revoked;
+  return `
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Severity">
+        <button type="button" data-sev="all" aria-pressed="${state.sev === "all"}">All <span class="muted">${attackAll.filter(([f]) => !state.tactic || f.tactic === state.tactic).length}</span></button>
+        ${SEV.map(s => `<button type="button" data-sev="${s}" aria-pressed="${state.sev === s}" style="--c:${sevVar(s)}"><span class="dot"></span>${SEV_LABEL[s]} <span class="muted">${sevCount(s)}</span></button>`).join("")}
+      </div>
+      ${state.tactic ? `<span class="chip" style="font-family:var(--font)">${esc(state.tactic)} <button class="btn sm icon ghost" type="button" id="clear-tactic" aria-label="Clear tactic filter" style="height:20px;width:20px">${icon("x")}</button></span>` : ""}
+      <label class="field grow">${icon("search")}<input id="fq" type="search" placeholder="Search findings, accounts, IPs, techniques" value="${esc(state.q)}"></label>
+    </div>
+    <div class="flist">${attack.map(([f, i]) => findingCard(f, i, byId)).join("") || `<div class="empty-row">No findings match these filters.</div>`}</div>
+
+    ${posture.length ? `<div class="group-head"><h3>Security posture</h3><p>Risky practice worth fixing. Not counted as attacker activity.</p></div>
+      <div class="flist">${posture.map(([f, i]) => findingCard(f, i, byId)).join("")}</div>` : ""}
+
+    ${suppressed.length || revoked.length ? `<div class="group-head"><h3>Suppressed by analyst</h3><p>Excluded from the story and risk score. Every decision is in the custody ledger and the report.</p></div>
+      <div class="flist">${suppressed.map(([f, i]) => findingCard(f, i, byId)).join("")}</div>
+      ${revoked.map(x => `<div class="note">${icon("undo")} Withdrawn <b>${esc(x.id)}</b> by ${esc(x.revoked_by)}: ${esc(x.revoke_reason)}</div>`).join("")}` : ""}`;
+}
+function bindFindings() {
+  const a = current.analysis;
+  const byId = Object.fromEntries(a.finding_events.map(e => [e.id, e]));
+  document.querySelectorAll("[data-sev]").forEach(b => b.onclick = () => { state.sev = b.dataset.sev; render(); });
+  const ct = $("#clear-tactic"); if (ct) ct.onclick = () => { state.tactic = null; render(); };
+  const fq = $("#fq");
+  fq.oninput = () => { state.q = fq.value; const pos = fq.selectionStart; render(); const n = $("#fq"); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} };
+  document.querySelectorAll("[data-expand]").forEach(b => b.onclick = () => {
+    const i = Number(b.dataset.expand); state.expanded.has(i) ? state.expanded.delete(i) : state.expanded.add(i); render(); });
+  document.querySelectorAll("[data-suppress]").forEach(b => b.onclick = () => {
+    const i = Number(b.dataset.suppress); state.suppressFor = state.suppressFor === i ? null : i; state.restoreFor = null; render();
+    const t = $("#sup-reason"); if (t) t.scrollIntoView({ block: "center", behavior: "smooth" }); });
+  document.querySelectorAll("[data-restore]").forEach(b => b.onclick = () => {
+    state.restoreFor = state.restoreFor === b.dataset.restore ? null : b.dataset.restore; state.suppressFor = null; render();
+    const t = $("#res-reason"); if (t) t.focus(); });
+
   const form = $("#supform");
   if (form) {
     const f = a.findings[state.suppressFor];
-    const cands = scopeCandidates(f, eventsById);
+    const cands = scopeCandidates(f, byId);
     $("#supcancel").onclick = () => { state.suppressFor = null; render(); };
     form.querySelectorAll('input[name="cond"]').forEach(cb => cb.onchange = () => { form.querySelector('input[name="scope"][value="where"]').checked = true; });
     form.onsubmit = async e => {
@@ -405,50 +761,143 @@ function render() {
       const body = { rule_id: f.rule_id, verdict: fd.get("verdict"), reason: String(fd.get("reason") || "").trim(), scope: fd.get("scope") };
       if (body.scope === "finding") body.fingerprints = f.attributed_fps;
       else body.conditions = fd.getAll("cond").map(i => ({ field: cands[i].field, op: "equals", value: cands[i].value }));
+      const btn = form.querySelector('button[type="submit"]');
       try {
         body.examiner = examiner();
         if (body.reason.length < 5) throw new Error("Give a reason (at least 5 characters).");
         if (body.scope === "where" && !body.conditions.length) throw new Error("Tick at least one value to match.");
-        form.querySelector('button[type="submit"]').disabled = true;
-        err.textContent = "Saving and re-analysing...";
-        await post(caseUrl("/suppressions"), body);
-        await loadCases(current.case.id);
-      } catch (x) { err.textContent = x.message; form.querySelector('button[type="submit"]').disabled = false; }
+        btn.disabled = true; btn.innerHTML = `${icon("refresh")} Saving & re-analysing…`;
+        const r = await post(caseUrl("/suppressions"), body);
+        toast(`Suppressed as ${r.suppression}. Recorded in the custody ledger.`);
+        await reloadCurrent();
+      } catch (x) { err.textContent = x.message; btn.disabled = false; btn.innerHTML = `${icon("eyeoff")} Suppress &amp; re-analyse`; }
+    };
+  }
+  const rform = $("#resform");
+  if (rform) {
+    const id = state.restoreFor;
+    $("#rescancel").onclick = () => { state.restoreFor = null; render(); };
+    rform.onsubmit = async e => {
+      e.preventDefault();
+      const err = $("#reserr"); err.textContent = "";
+      const reason = String(new FormData(rform).get("reason") || "").trim();
+      const btn = rform.querySelector('button[type="submit"]');
+      try {
+        const name = examiner();
+        if (reason.length < 5) throw new Error("Give a reason (at least 5 characters).");
+        btn.disabled = true;
+        await post(caseUrl(`/suppressions/${encodeURIComponent(id)}/revoke`), { examiner: name, reason });
+        toast(`Restored ${id}. Recorded in the custody ledger.`);
+        await reloadCurrent();
+      } catch (x) { err.textContent = x.message; btn.disabled = false; }
     };
   }
 }
 
-function bindCommon() {
-  $("#reverify").onclick = async () => {
-    const b = $("#reverify"); b.disabled = true; b.textContent = "Verifying...";
-    try { current.verification = await post(caseUrl("/verify")); render(); }
-    catch (err) { alert(err.message); b.disabled = false; b.textContent = "Re-verify"; }
-  };
+// ===================================================================== timeline
+function timelineView() {
+  const a = current.analysis;
+  let events, label;
+  if (state.tl.flagged) {
+    events = a.finding_events.filter(e => e.rules.length);
+    label = `${fmt(events.length)} flagged of ${fmt(a.timeline_total)} events`;
+  } else {
+    events = state.tl.page ? state.tl.page.events : [];
+    label = state.tl.page ? `${fmt(events.length)} of ${fmt(state.tl.page.total)}${state.tl.q ? " matching" : ""} events` : "Loading…";
+  }
+  const more = !state.tl.flagged && state.tl.page && events.length < state.tl.page.total;
+  let lastDay = "";
+  const rows = events.map(e => {
+    const d = e.ts.slice(0, 10);
+    const sep = d !== lastDay ? `<div class="tl-day">${esc(day(e.ts))}</div>` : "";
+    lastDay = d;
+    return `${sep}<div class="tl-row ${e.rules.length ? "flag" : ""}"><span class="dot"></span><span class="t">${time(e.ts)}</span>
+      <span class="h" title="${esc(e.source)}">${esc(e.host)}</span>
+      <span class="m"><span class="k">${esc(e.kind)}</span>${esc(e.message)} ${e.rules.map(r => `<span class="tech">${esc(r)}</span>`).join(" ")}</span></div>`;
+  }).join("");
+  return `<div class="card">
+    <div class="toolbar">
+      <label class="switch"><input type="checkbox" id="flagOnly" ${state.tl.flagged ? "checked" : ""}> Flagged events only</label>
+      ${state.tl.flagged ? "" : `<label class="field grow">${icon("search")}<input id="tq" type="search" placeholder="Search message, host, user, kind or IP — press Enter" value="${esc(state.tl.q)}"></label>`}
+      <span class="muted" style="font-size:12.5px;margin-left:auto">${label}</span>
+    </div>
+    <div class="tl">${rows || `<div class="empty-row">${state.tl.page || state.tl.flagged ? "No events." : "Loading…"}</div>`}</div>
+    ${more ? `<div class="more"><button class="btn" type="button" id="more">Load ${Math.min(PAGE, state.tl.page.total - events.length)} more</button></div>` : ""}
+  </div>`;
+}
+function bindTimeline() {
+  $("#flagOnly").onchange = e => { state.tl.flagged = e.target.checked; state.tl.page = null; render(); if (!state.tl.flagged) loadPage(false); };
+  const q = $("#tq"); if (q) q.onkeydown = e => { if (e.key === "Enter") { state.tl.q = q.value.trim(); loadPage(false); } };
+  const m = $("#more"); if (m) m.onclick = () => loadPage(true);
 }
 
-async function restore(id) {
-  try {
-    const name = examiner();
-    const reason = prompt(`Why restore ${id}? (recorded in the custody ledger)`);
-    if (reason === null) return;
-    await post(caseUrl(`/suppressions/${encodeURIComponent(id)}/revoke`), { examiner: name, reason });
-    await loadCases(current.case.id);
-  } catch (err) { alert(err.message); }
-}
-
-$("#report").onclick = () => window.open(caseUrl("/report"), "_blank");
-$("#reanalyze").onclick = async () => {
-  const btn = $("#reanalyze");
-  try {
-    const name = examiner();
-    btn.disabled = true; btn.textContent = "Analysing...";
-    await post(caseUrl("/analyze"), { examiner: name });
-    await loadCases(current.case.id);
-  } catch (err) { alert(err.message); }
-  finally { btn.disabled = false; btn.textContent = "Re-run analysis"; }
+// ===================================================================== custody
+const ACTION = {
+  "case.create": ["plus", "var(--accent)", "Case opened"], "evidence.ingest": ["file", "var(--low)", "Evidence acquired"],
+  "evidence.collection": ["server", "var(--low)", "Collection verified"], "analysis.run": ["activity", "var(--accent)", "Analysis run"],
+  "report.export": ["external", "var(--muted)", "Report exported"], "finding.suppress": ["eyeoff", "var(--medium)", "Finding suppressed"],
+  "finding.unsuppress": ["undo", "var(--medium)", "Suppression withdrawn"],
 };
-const caseFromUrl = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; } };
-loadCases(caseFromUrl()).catch(err => { $("#main").innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`; });
+function custodyView() {
+  const { ledger, verification: v } = current;
+  const checked = v.checked_at ? v.checked_at.replace("T", " ").slice(0, 16) + " UTC" : "";
+  return `
+    <div class="banner ${v.ok ? "ok" : "bad"}"><div class="big">${icon(v.ok ? "shield" : "alert")}</div>
+      <div class="grow"><h3>${v.ok ? "Chain of custody intact" : "Integrity check failed"}</h3>
+        <p>${v.ok ? `All ${v.entries} ledger entries chain correctly and every evidence file matches the hash recorded when it was acquired.`
+                  : "Something changed after it was recorded. Details below."} Checked ${esc(checked)}.</p></div>
+      <button class="btn" type="button" id="reverify">${icon("refresh")} Re-verify</button></div>
+    ${v.problems.length ? `<div class="card" style="border-color:var(--bad)"><h2 style="color:var(--bad)">${icon("alert")} Problems</h2>
+      <ul>${v.problems.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>` : ""}
+    <div class="card"><h2>${icon("file")} Evidence files</h2><p class="sub">Re-hashed on every verification.</p>
+      <div class="scroll"><table><tr><th>File</th><th>SHA-256</th><th>Status</th></tr>
+      ${v.evidence.map(e => `<tr><td class="mono">${esc(e.file)}</td><td class="mono" title="${esc(e.expected)}">${esc(String(e.expected).slice(0, 20))}…</td>
+        <td>${e.ok ? `<span class="badge" style="--c:var(--ok)">${icon("check")} match</span>` : `<span class="badge" style="--c:var(--bad)">${icon("x")} changed</span>`}</td></tr>`).join("")}
+      </table></div></div>
+    <div class="card"><h2>${icon("lock")} Ledger</h2>
+      <p class="sub">Append-only and hash-chained. Head: <span class="mono" style="overflow-wrap:anywhere">${esc(v.head || "-")}</span>
+        ${v.head ? `<button class="btn sm ghost" type="button" data-copy="${esc(v.head)}">${icon("copy")} Copy</button>` : ""}</p>
+      <div class="ledger">${ledger.slice().reverse().map(e => {
+        const [ic, col, label] = ACTION[e.action] || ["activity", "var(--muted)", e.action];
+        const d = e.details || {};
+        const detail = e.evidence ? `${e.evidence}${e.sha256 ? " · " + e.sha256.slice(0, 16) + "…" : ""}`
+          : d.id ? `${d.id}${d.rule_id ? " " + d.rule_id : ""}${d.reason ? " — " + d.reason : ""}`
+          : d.host ? `${d.host}, ${(d.files || []).length} files` : d.findings !== undefined ? `${fmt(d.events)} events, ${d.findings} findings, risk ${d.risk_score}` : "";
+        return `<div class="entry" style="--c:${col}"><div class="eico">${icon(ic)}</div>
+          <div style="min-width:0"><div class="what">${esc(label)}</div><div class="detail">${esc(detail)}</div></div>
+          <div class="right">#${e.seq} · ${esc(e.actor)}<br>${esc(e.ts.replace("T", " ").slice(0, 19))}</div></div>`;
+      }).join("")}</div></div>`;
+}
+function bindCustody() {
+  $("#reverify").onclick = async () => {
+    const b = $("#reverify"); b.disabled = true; b.innerHTML = `${icon("refresh")} Verifying…`;
+    try { current.verification = await post(caseUrl("/verify")); render(); toast(current.verification.ok ? "Integrity verified" : "Integrity check failed", current.verification.ok ? "ok" : "error"); }
+    catch (err) { toast(err.message, "error"); b.disabled = false; }
+  };
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyText(b.dataset.copy));
+}
+
+// ===================================================================== actions
+async function reanalyze() {
+  const btns = [$("#reanalyze"), $("#reanalyze2")].filter(Boolean);
+  try {
+    const name = examiner();
+    btns.forEach(b => { b.disabled = true; b.innerHTML = `${icon("refresh")} Analysing…`; });
+    const r = await post(caseUrl("/analyze"), { examiner: name });
+    toast(`Analysis complete: ${r.findings} findings, risk ${r.risk.score}/100.`);
+    await reloadCurrent();
+  } catch (err) { toast(err.message, "error"); btns.forEach(b => { b.disabled = false; b.innerHTML = `${icon("refresh")} Re-run analysis`; }); }
+}
+
+// ===================================================================== start
+const start = parseHash();
+loadCases(start.id, start.tab).catch(err => {
+  $("#main").innerHTML = `<div class="empty"><div class="art">${icon("alert")}</div><h2>Could not load cases</h2><p>${esc(err.message)}</p></div>`;
+});
+window.addEventListener("hashchange", () => {
+  const h = parseHash();
+  if (current && h.id && (h.id !== current.case.id || (h.tab || "overview") !== state.tab)) openCase(h.id, { tab: h.tab || "overview" });
+});
 </script>
 </body>
 </html>

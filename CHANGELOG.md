@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Redesigned dashboard:** light and dark themes (following the system setting, with a toggle),
+  Overview / Findings / Timeline / Custody tabs, a numbered "What happened" storyline,
+  identities shown as people, a clickable ATT&CK kill chain that filters findings, finding cards
+  with inline evidence, severity filters with counts and search, and notices and inline forms
+  instead of browser pop-ups. Works at phone width. Still fully offline: no web fonts, CDNs or
+  icon libraries.
+- The open case and tab are part of the URL (`#CASE-002/findings`), so views can be linked.
+- Storyline keeps rule titles in their original case ("AWS console login without MFA").
+- Case IDs are checked with a full match (a trailing newline used to pass), Windows device names
+  such as `CON` are rejected, and the resolved case folder must sit inside the cases root.
+  Found by CodeQL.
+- Public-repo files: security policy, contributing guide, issue forms, PR checklist, CodeQL and
+  Dependabot. Sample data uses reserved `.example` domains.
+
 ## 0.3.0 - 2026-10-25
 
 - **Windows evidence collector** (`Collect-TraceVault.ps1`, Windows PowerShell 5.1 and 7):
