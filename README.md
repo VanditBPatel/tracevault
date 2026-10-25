@@ -41,6 +41,17 @@ CloudTrail, all from made-up data. It follows your light or dark setting and wor
 
 </details>
 
+<details>
+<summary>Incident report (prints to PDF)</summary>
+
+<img alt="Incident report cover: overall risk gauge, case facts, finding counts by severity, integrity seal, contents, and a plain-language executive summary" src="docs/images/report.png">
+
+The report is one self-contained HTML file: a cover page, a plain-language executive summary, the
+storyline, identities, ATT&CK coverage, every finding with its evidence, analyst decisions and the
+full chain of custody. It prints to A4 or Letter with page numbers on every page.
+
+</details>
+
 > Business plan, market and roadmap: [docs/BUSINESS.md](docs/BUSINESS.md) ·
 > Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
 > Measured accuracy: [docs/VALIDATION.md](docs/VALIDATION.md) ·

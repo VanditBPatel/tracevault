@@ -8,6 +8,12 @@
   with inline evidence, severity filters with counts and search, and notices and inline forms
   instead of browser pop-ups. Works at phone width. Still fully offline: no web fonts, CDNs or
   icon libraries.
+- **Redesigned incident report:** a cover with a risk gauge, case facts and an integrity seal; a
+  plain-language executive summary generated only from the analysis; numbered storyline;
+  identities and indicators tables; ATT&CK coverage; finding cards with evidence tables; posture
+  and analyst decisions; full chain of custody; and method and limitations. Prints cleanly to
+  PDF (A4) with page numbers, keeps headings with their content, and starts Findings and Custody
+  on new pages. A "Print or save as PDF" button is shown on screen.
 - The open case and tab are part of the URL (`#CASE-002/findings`), so views can be linked.
 - Storyline keeps rule titles in their original case ("AWS console login without MFA").
 - Case IDs are checked with a full match (a trailing newline used to pass), Windows device names

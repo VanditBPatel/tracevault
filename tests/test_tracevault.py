@@ -489,6 +489,53 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 400)
 
 
+class ReportTests(unittest.TestCase):
+    def setUp(self):
+        from tracevault import report
+        self.report = report
+        self.result = analysis.analyze(cloud_events())
+        self.ok = {"ok": True, "entries": 5, "head": "ab" * 32, "evidence": [
+            {"file": "okta.json", "expected": "cd" * 32, "actual": "cd" * 32, "ok": True}], "problems": [],
+            "checked_at": "2026-10-25T07:00:00+00:00"}
+
+    def test_summary_states_the_facts(self):
+        text = " ".join(self.report.executive_summary(self.result, self.ok))
+        self.assertIn("16 findings of attacker activity (4 critical, 7 high, 5 medium)", text)
+        self.assertIn("between 09:00 and 09:34 UTC on 22 October 2026", text)
+        self.assertIn("1 identity appears compromised (priya)", text)
+        self.assertIn("the attacker created 1 account (backup-svc)", text)
+        self.assertIn("External address involved: 203.0.113.80. Consider blocking it", text)
+        self.assertIn("custody ledger (5 entries) is intact", text)
+
+    def test_no_attack_and_failed_integrity_wording(self):
+        quiet = analysis.analyze([e for e in sample_events() if "alice" == e.user])
+        bad = {**self.ok, "ok": False, "problems": ["Evidence x.log hash changed since acquisition"]}
+        text = " ".join(self.report.executive_summary(quiet, bad))
+        self.assertIn("found no attacker activity", text)
+        self.assertIn("WARNING: the integrity check failed", text)
+        html = self.report.render(quiet, [], bad)
+        self.assertIn("Integrity check failed", html)
+        self.assertIn("hash changed since acquisition", html)
+
+    def test_attacker_content_is_escaped(self):
+        evil = '<script>alert(1)</script><img src=x onerror=alert(2)>'
+        for e in self.result["timeline"]:
+            e["message"] = evil
+            e["host"] = evil
+        for f in self.result["findings"]:
+            f["summary"] = evil
+        html = self.report.render(self.result, [], self.ok)
+        self.assertNotIn("<script>alert(1)", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+
+    def test_all_sections_present(self):
+        html = self.report.render(self.result, [], self.ok)
+        for anchor in ("summary", "story", "people", "attack", "findings", "review", "custody", "method"):
+            self.assertIn(f'id="{anchor}"', html)
+        self.assertIn("Page \" counter(page)", html)  # page numbers when printed
+
+
 class CollectionTests(unittest.TestCase):
     """ingest-collection: verify a collector folder against its manifest, then ingest it."""
 
