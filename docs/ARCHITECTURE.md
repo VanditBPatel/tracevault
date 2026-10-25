@@ -50,4 +50,5 @@ without ever being logged. `anchor()` exposes the head hash, which commits to th
 - **New artifact type:** add a `parse_<fmt>(path) -> list[Event]` in `parsers.py`, register it in
   `PARSERS`, and teach `detect_format` to recognize it.
 - **New detection:** add an object to `rules.json` (or a separate file passed with `--rules`).
-  Add a sample line to `samples/` and an assertion in `tests/`.
+  Add a sample line to `tracevault/samples/` and an assertion in `tests/`, then check accuracy
+  with `tracevault validate` (see [VALIDATION.md](VALIDATION.md)).

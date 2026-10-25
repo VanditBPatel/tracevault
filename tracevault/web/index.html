@@ -159,7 +159,7 @@ async function loadCases(selectId) {
   const box = $("#cases");
   if (!cases.length) {
     box.innerHTML = "";
-    $("#main").innerHTML = `<div class="empty">No cases yet.<br><br>Run <span class="mono">python -m tracevault demo</span> to load the sample breaches.</div>`;
+    $("#main").innerHTML = `<div class="empty">No cases yet.<br><br>Run <span class="mono">tracevault demo</span> to load the sample breaches.</div>`;
     return;
   }
   box.innerHTML = cases.map(c => `

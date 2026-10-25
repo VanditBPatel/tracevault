@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracevault"
+dynamic = ["version"]
+description = "Evidence-first DFIR triage: super-timelines, ATT&CK-mapped detections and a tamper-evident chain of custody."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "VanditBPatel" }]
+requires-python = ">=3.10"
+dependencies = []
+keywords = ["dfir", "forensics", "incident-response", "chain-of-custody", "mitre-attack", "sysmon", "cloudtrail"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Environment :: Web Environment",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: System :: Logging",
+]
+
+[project.scripts]
+tracevault = "tracevault.cli:main"
+
+[tool.setuptools]
+license-files = ["LICENSE", "NOTICE"]
+
+[tool.setuptools.dynamic]
+version = { attr = "tracevault.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["tracevault*"]
+
+[tool.setuptools.package-data]
+tracevault = ["rules.json", "web/*.html", "samples/*/*", "datasets/*.json"]

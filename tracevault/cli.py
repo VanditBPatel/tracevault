@@ -1,4 +1,4 @@
-"""Command-line interface:  python -m tracevault <command> ..."""
+"""Command-line interface:  tracevault <command> ...  (or python -m tracevault)"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from . import __version__, analysis, detections, identities, parsers, workflow
 from .custody import Case
 
-SAMPLES = Path(__file__).resolve().parent.parent / "samples"
+SAMPLES = Path(__file__).resolve().parent / "samples"
 SAMPLE_CASES = {
     "CASE-001": ("case-001", "Acme Labs - web server and finance workstation compromise"),
     "CASE-002": ("case-002", "Acme Labs - cloud identity takeover (Okta, Microsoft 365, AWS)"),
@@ -142,7 +142,7 @@ def cmd_unsuppress(a: argparse.Namespace) -> int:
 def cmd_validate(a: argparse.Namespace) -> int:
     """Score the rules against public attack datasets listed in a manifest."""
     from . import validate
-    manifest_path = Path(a.manifest) if a.manifest else validate.DEFAULT_MANIFEST
+    manifest_path = validate.resolve_manifest(a.manifest or validate.DEFAULT_MANIFEST)
     data_dir = Path(a.data) if a.data else validate.DEFAULT_DATA
     manifest = validate.load_manifest(manifest_path)
     if a.fetch:
@@ -182,7 +182,7 @@ def cmd_demo(a: argparse.Namespace) -> int:
         result = workflow.analyze_case(case, examiner=examiner, year=2026)
         _print_summary(result)
         print(f"  Report:    {case.dir / 'report.html'}")
-    print(f"\n  Dashboard: python -m tracevault serve --cases {a.cases}")
+    print(f"\n  Dashboard: tracevault --cases {a.cases} serve")
     return 0
 
 
@@ -236,9 +236,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--examiner")
 
     sp = add("validate", cmd_validate, "score detection rules against public attack datasets")
-    sp.add_argument("--manifest"); sp.add_argument("--data"); sp.add_argument("--rules")
+    sp.add_argument("--manifest", help="otrf (default), otrf-holdout, or a path to your own manifest")
+    sp.add_argument("--data", help="dataset folder (default: $TRACEVAULT_DATA or ~/.tracevault/datasets)")
+    sp.add_argument("--rules")
     sp.add_argument("--fetch", action="store_true", help="download datasets missing from --data")
-    sp.add_argument("--pin", action="store_true", help="record downloaded SHA-256 hashes in the manifest")
+    sp.add_argument("--pin", action="store_true",
+                    help="maintainers: record downloaded SHA-256 hashes in the manifest file")
     sp.add_argument("--json-out", help="write the full scorecard as JSON")
 
     sp = add("serve", cmd_serve, "start the local dashboard")

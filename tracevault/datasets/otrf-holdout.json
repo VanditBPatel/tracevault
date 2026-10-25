@@ -1,5 +1,5 @@
 {
-  "source": "OTRF Security-Datasets (https://github.com/OTRF/Security-Datasets) - originally HELD-OUT: expectations were written before the first run, and that untuned first run is the out-of-sample result recorded in validation/RESULTS.md. Rules were tuned on these datasets afterwards, so later runs here are in-sample.",
+  "source": "OTRF Security-Datasets (https://github.com/OTRF/Security-Datasets) - originally HELD-OUT: expectations were written before the first run, and that untuned first run is the out-of-sample result recorded in docs/VALIDATION.md. Rules were tuned on these datasets afterwards, so later runs here are in-sample.",
   "base_url": "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/",
   "known_artifacts": {
     "TV-024": "Every OTRF recording starts by clearing the Security log, so the log-cleared rule fires on each dataset. This is a property of how the data was captured, not of the simulated attack."

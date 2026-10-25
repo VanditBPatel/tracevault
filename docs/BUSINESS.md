@@ -117,7 +117,7 @@ insurers, and **MSP distribution**.
 - Detection rate and false positives on public attack datasets. The first measurement is
   **82%** of techniques detected on held-out OTRF Security-Datasets recordings, with false
   positives from Windows background services that were then tuned out
-  ([validation/RESULTS.md](../validation/RESULTS.md)). Grow the benchmark and publish each release's score.
+  ([VALIDATION.md](VALIDATION.md)). Grow the benchmark and publish each release's score.
 - Cases handed to professional responders without re-collection
 - MSP accounts, managed endpoints, monthly active cases
 - Net revenue retention and insurer-channel conversion

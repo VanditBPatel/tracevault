@@ -1,0 +1,11 @@
+TraceVault
+Copyright 2026 VanditBPatel
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Detection rules reference MITRE ATT&CK(R) technique identifiers. ATT&CK is a registered
+trademark of The MITRE Corporation.
+
+The validation tooling downloads datasets from the OTRF Security-Datasets project
+(https://github.com/OTRF/Security-Datasets). Those datasets are not redistributed here and
+remain under their own license.

@@ -13,27 +13,40 @@ Microsoft 365, Okta) — and in seconds produces:
   action is written to a hash-chained ledger, so any later change to evidence or records is detected
 - a **printable incident report** and a local investigation **dashboard**
 
-It is pure Python 3.10+ standard library: no installs, no internet, safe to drop on an IR jump box.
+It uses only the Python 3.10+ standard library. There are no dependencies and nothing calls the
+internet, so it is safe to drop on an IR jump box.
 
 > Business plan, market and roadmap: [docs/BUSINESS.md](docs/BUSINESS.md) ·
-> Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+> Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
+> Measured accuracy: [docs/VALIDATION.md](docs/VALIDATION.md) · License: Apache-2.0
+
+## Install
+
+From a checkout of this repository:
+
+```bash
+python -m pip install .
+```
+
+This installs the `tracevault` command. With no install at all, `python -m tracevault` works
+the same from the repository root.
 
 ## Quick start
 
 ```bash
-python -m tracevault demo
+tracevault demo
 ```
 
 ```bash
-python -m tracevault serve
+tracevault serve
 ```
 
 Then open http://127.0.0.1:8765. The demo loads two realistic sample breaches:
 
-- **CASE-001** (`samples/case-001`, on-prem): SSH brute force on a web server, root shell,
+- **CASE-001** (`tracevault/samples/case-001`, on-prem): SSH brute force on a web server, root shell,
   web-shell upload, lateral movement to a finance workstation, LSASS credential dumping,
   persistence, data exfiltration and log clearing.
-- **CASE-002** (`samples/case-002`, cloud identity): Okta password spray, MFA push bombing until
+- **CASE-002** (`tracevault/samples/case-002`, cloud identity): Okta password spray, MFA push bombing until
   the user approves, login from a second country, a hidden mailbox forwarding rule and OAuth app
   consent in Microsoft 365, then in AWS: recon, a backdoor IAM user with admin rights, a customer
   data bucket made public, and CloudTrail switched off.
@@ -41,11 +54,11 @@ Then open http://127.0.0.1:8765. The demo loads two realistic sample breaches:
 ## Working a real case
 
 ```bash
-python -m tracevault case-new IR-2026-014 --title "Payroll server alert" --examiner "J. Doe"
-python -m tracevault ingest IR-2026-014 /evidence/auth.log /evidence/web-01_access.log /evidence/DC01_security.jsonl
-python -m tracevault analyze IR-2026-014
-python -m tracevault verify IR-2026-014
-python -m tracevault anchor IR-2026-014
+tracevault case-new IR-2026-014 --title "Payroll server alert" --examiner "J. Doe"
+tracevault ingest IR-2026-014 /evidence/auth.log /evidence/web-01_access.log /evidence/DC01_security.jsonl
+tracevault analyze IR-2026-014
+tracevault verify IR-2026-014
+tracevault anchor IR-2026-014
 ```
 
 | Command | What it does |
@@ -60,7 +73,8 @@ python -m tracevault anchor IR-2026-014
 | `validate` | Score the rules against public attack datasets (`--fetch` downloads them, hashes verified) |
 | `serve` | Local dashboard on 127.0.0.1 |
 
-All commands accept `--cases <dir>` (default `./cases`).
+Cases live in `./cases` by default. To use another folder, put `--cases <dir>` before the
+command, e.g. `tracevault --cases D:\ir serve`.
 
 ### Supported evidence
 
@@ -116,7 +130,7 @@ false positive or authorized activity (an admin task, a pentest), they suppress 
 dashboard (the **Suppress** button on each finding) or from the command line:
 
 ```bash
-python -m tracevault suppress IR-2026-014 --rule TV-030 --where source_image="C:\WindowsAzure\GuestAgent_2.7\CollectGuestLogs.exe" --reason "Azure VM agent log collection, confirmed with cloud team"
+tracevault suppress IR-2026-014 --rule TV-030 --where source_image="C:\WindowsAzure\GuestAgent_2.7\CollectGuestLogs.exe" --reason "Azure VM agent log collection, confirmed with cloud team"
 ```
 
 - Scope is either **this finding only** (matched by event fingerprints, so it survives adding
@@ -160,10 +174,10 @@ report is on record.
 ## Measured accuracy
 
 The Windows rules are scored against public attack recordings from OTRF Security-Datasets
-with `python -m tracevault validate --fetch`. On 11 held-out datasets they had never been
+with `tracevault validate --fetch`. On 11 held-out datasets they had never been
 tuned on, the rules detected **82%** of expected techniques on the first run. They also raised
 false alarms from Windows background services and a cloud VM agent, which were then tuned out.
-Full method, per-dataset tables and limitations: [validation/RESULTS.md](validation/RESULTS.md).
+Full method, per-dataset tables and limitations: [docs/VALIDATION.md](docs/VALIDATION.md).
 
 ## Tests
 
@@ -177,24 +191,29 @@ activity, and custody tamper scenarios (edited evidence, edited/deleted ledger e
 ## Project layout
 
 ```
-tracevault/
-  parsers.py      artifact parsers -> normalized Event
-  detections.py   JSON rule engine (match / threshold / followed_by)
-  rules.json      bundled ATT&CK-mapped rules
-  analysis.py     risk score, kill chain, IOCs, narrative
-  identities.py   cross-system identity linking and status
-  validate.py     accuracy scoring against public datasets
-  suppressions.py analyst suppressions, replayed from the custody ledger
-validation/       dataset manifests (tuning + held-out) and RESULTS.md
-  custody.py      case workspace + hash-chained custody ledger
-  workflow.py     case-level operations used by CLI and server
-  report.py       printable HTML report
-  server.py       stdlib HTTP dashboard + JSON API
-  web/index.html  dashboard UI
-samples/case-001  sample breach evidence
-tests/            unittest suite
-docs/             business plan and architecture
+tracevault/            the package
+  parsers.py           artifact parsers -> normalized Event
+  detections.py        JSON rule engine (match / threshold / followed_by / field_change)
+  rules.json           bundled ATT&CK-mapped rules
+  analysis.py          risk score, kill chain, IOCs, narrative
+  identities.py        cross-system identity linking and status
+  suppressions.py      analyst suppressions, replayed from the custody ledger
+  custody.py           case workspace + hash-chained custody ledger
+  workflow.py          case-level operations used by CLI and server
+  report.py            printable HTML report
+  server.py            stdlib HTTP dashboard + JSON API
+  validate.py          accuracy scoring against public datasets
+  web/index.html       dashboard UI
+  samples/case-00x/    sample breach evidence used by `tracevault demo`
+  datasets/            validation manifests (otrf = tuning set, otrf-holdout = held-out set)
+tests/                 unittest suite
+docs/                  business plan, architecture, validation results
+.github/workflows/     CI: tests on Linux and Windows, Python 3.10-3.13
 ```
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ## Security notes
 

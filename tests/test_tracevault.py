@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT))
 from tracevault import analysis, detections, identities, parsers, workflow  # noqa: E402
 from tracevault.custody import Case  # noqa: E402
 
-SAMPLES = ROOT / "samples" / "case-001"
-CLOUD = ROOT / "samples" / "case-002"
+SAMPLES = ROOT / "tracevault" / "samples" / "case-001"
+CLOUD = ROOT / "tracevault" / "samples" / "case-002"
 
 
 def sample_events():

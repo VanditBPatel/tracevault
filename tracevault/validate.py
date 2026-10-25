@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import urllib.error
 import urllib.request
 import zipfile
@@ -21,10 +22,23 @@ from typing import Any
 
 from . import detections, parsers
 
-ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_MANIFEST = ROOT / "validation" / "otrf.json"
-DEFAULT_DATA = ROOT / "validation" / "data"
+MANIFEST_DIR = Path(__file__).resolve().parent / "datasets"
+# Bundled manifests, by name: the tuning set and the held-out set (see docs/VALIDATION.md).
+MANIFESTS = {"otrf": MANIFEST_DIR / "otrf.json", "otrf-holdout": MANIFEST_DIR / "otrf-holdout.json"}
+DEFAULT_MANIFEST = "otrf"
+# Downloads live outside the package so an installed copy stays read-only and small.
+DEFAULT_DATA = Path(os.environ.get("TRACEVAULT_DATA") or Path.home() / ".tracevault" / "datasets")
 MAX_DOWNLOAD = 50 * 1024 * 1024
+
+
+def resolve_manifest(name_or_path: str) -> Path:
+    """A bundled manifest name (otrf, otrf-holdout) or a path to your own manifest."""
+    if name_or_path in MANIFESTS:
+        return MANIFESTS[name_or_path]
+    path = Path(name_or_path)
+    if not path.is_file():
+        raise ValueError(f"Unknown manifest {name_or_path!r}: use one of {', '.join(MANIFESTS)} or a file path")
+    return path
 
 
 def load_manifest(path: Path) -> dict[str, Any]:

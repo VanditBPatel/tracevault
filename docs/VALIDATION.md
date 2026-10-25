@@ -8,15 +8,16 @@ ordinary background activity of that machine.
 Reproduce with:
 
 ```bash
-python -m tracevault validate --fetch
+tracevault validate --fetch
 ```
 
 ```bash
-python -m tracevault validate --manifest validation/otrf_holdout.json --fetch
+tracevault validate --manifest otrf-holdout --fetch
 ```
 
-Downloads are verified against the SHA-256 hashes pinned in the manifests, and only `.json`
-files are extracted. `validation/data/` is git-ignored.
+Downloads (about 15 MB for both sets) go to `~/.tracevault/datasets`, or `$TRACEVAULT_DATA` if
+set. They are verified against the SHA-256 hashes pinned in the manifests
+(`tracevault/datasets/`), and only `.json` files are extracted.
 
 ## How it is scored
 
