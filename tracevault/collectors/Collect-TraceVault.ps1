@@ -54,7 +54,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = '0.4.1'
+$CollectorVersion = '0.4.2'
 $EventNs = 'http://schemas.microsoft.com/win/2004/08/events/event'
 
 function ConvertTo-UtcIso([datetime]$Value) {

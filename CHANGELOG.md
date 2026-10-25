@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 - 2026-10-25
 
 - **New rule TV-040 "Service launched encoded PowerShell"** (critical, T1569.002): the Windows
   service manager starting encoded PowerShell (directly or through `cmd.exe`), or a service
