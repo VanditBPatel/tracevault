@@ -489,6 +489,48 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 400)
 
 
+class RiskScoreTests(unittest.TestCase):
+    """The score counts distinct behaviours, not alerts."""
+
+    def _f(self, rule, sev="medium", tactic="Persistence"):
+        from datetime import datetime, timezone
+        from tracevault.models import Event, Finding
+        e = Event(ts=datetime(2026, 1, 1, tzinfo=timezone.utc), source="t", kind="k", host="h", message=rule, raw=rule)
+        return Finding(rule_id=rule, title=f"Rule {rule}", severity=sev, tactic=tactic, technique="T0",
+                       technique_name="", description="", summary="", ts=e.ts, events=[e])
+
+    def test_repeats_of_one_behaviour_stay_below_high(self):
+        r = analysis.risk_assessment([self._f("TV-022") for _ in range(6)])  # the clean-laptop shape
+        self.assertLess(r["score"], 50)
+        self.assertEqual(r["level"], "medium")
+        self.assertTrue(any("Repeats of the same behaviour add little" in x for x in r["reasons"]))
+
+    def test_distinct_behaviours_compound(self):
+        same = analysis.risk_assessment([self._f("TV-022") for _ in range(6)])["score"]
+        distinct = analysis.risk_assessment([self._f(f"TV-{i:03d}") for i in range(6)])["score"]
+        self.assertGreaterEqual(distinct, 50)
+        self.assertGreater(distinct, same + 30)
+
+    def test_repeat_bonus_is_capped(self):
+        three = analysis.risk_assessment([self._f("TV-022") for _ in range(3)])["score"]
+        fifty = analysis.risk_assessment([self._f("TV-022") for _ in range(50)])["score"]
+        self.assertEqual(three, fifty)
+
+    def test_single_critical_and_chain_reasons(self):
+        r = analysis.risk_assessment([self._f("TV-030", "critical", "Credential Access")])
+        self.assertEqual((r["score"], r["level"]), (50, "high"))
+        chain = analysis.risk_assessment([self._f("A", "high", "Initial Access"), self._f("B", "high", "Persistence"),
+                                          self._f("C", "high", "Exfiltration")])
+        self.assertTrue(any("chain from Initial Access to Exfiltration" in x for x in chain["reasons"]))
+
+    def test_no_findings(self):
+        self.assertEqual(analysis.risk_assessment([])["score"], 0)
+
+    def test_demo_cases_stay_critical(self):
+        self.assertEqual(analysis.analyze(sample_events())["risk"]["level"], "critical")
+        self.assertEqual(analysis.analyze(cloud_events())["risk"]["level"], "critical")
+
+
 class GroupingTests(unittest.TestCase):
     """Exact repeats fold into one finding; anything that differs stays separate."""
 

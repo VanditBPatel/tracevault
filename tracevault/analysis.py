@@ -20,15 +20,61 @@ ATTACK_TACTICS = [
     "Lateral Movement", "Collection", "Command and Control", "Exfiltration", "Impact",
 ]
 
-# Probability-style weights: each finding independently "adds" this much risk.
+# Probability-style weights: how strongly one kind of malicious behaviour (one rule) indicates
+# compromise. Distinct behaviours combine as independent evidence.
 SEVERITY_WEIGHT = {"low": 0.05, "medium": 0.15, "high": 0.30, "critical": 0.50}
+# More findings of the SAME rule add only a little: +25% of the rule's weight for each of the
+# next two, nothing after that. Ten installs of ten agents are not ten attacks.
+REPEAT_BONUS, REPEAT_CAP = 0.25, 2
+
+
+def risk_assessment(findings: list[Finding]) -> dict[str, Any]:
+    """Score how strongly the evidence indicates compromise, with the reasons for the score.
+
+    The unit of evidence is a distinct behaviour (detection rule), not an alert: repeated
+    findings of one rule barely move the score, while different behaviours - especially across
+    several ATT&CK tactics - compound.
+    """
+    if not findings:
+        return {"score": 0, "level": "low", "reasons": ["No attacker activity was detected."], "contributors": []}
+    by_rule: dict[str, list[Finding]] = {}
+    for f in findings:
+        by_rule.setdefault(f.rule_id, []).append(f)
+
+    contributors = []
+    remaining = 1.0
+    for rule_id, fs in by_rule.items():
+        top = max(fs, key=lambda f: SEVERITY_ORDER.get(f.severity, 0))
+        w = SEVERITY_WEIGHT.get(top.severity, 0)
+        c = min(0.95, w * (1 + REPEAT_BONUS * min(len(fs) - 1, REPEAT_CAP)))
+        remaining *= 1 - c
+        contributors.append({"rule_id": rule_id, "title": top.title, "severity": top.severity,
+                             "findings": len(fs), "points": round(100 * c)})
+    contributors.sort(key=lambda x: (-x["points"], x["rule_id"]))
+    score = round(100 * (1 - remaining))
+
+    sev = Counter(f.severity for f in findings)
+    tactics = sorted({f.tactic for f in findings}, key=ATTACK_TACTICS.index)
+    mix = ", ".join(f"{sev[s]} {s}" for s in ("critical", "high", "medium", "low") if sev[s])
+    reasons = [f"{len(by_rule)} distinct suspicious behaviour{'s' if len(by_rule) != 1 else ''} "
+               f"({len(findings)} finding{'s' if len(findings) != 1 else ''}: {mix}) across "
+               f"{len(tactics)} ATT&CK tactic{'s' if len(tactics) != 1 else ''}."]
+    if len(findings) > len(by_rule):
+        reasons.append(f"Repeats of the same behaviour add little: {len(findings)} findings come from "
+                       f"{len(by_rule)} rule{'s' if len(by_rule) != 1 else ''}.")
+    if len(tactics) >= 3:
+        reasons.append(f"The activity forms a chain from {tactics[0]} to {tactics[-1]}.")
+    elif not sev["critical"]:
+        reasons.append("No critical finding and no multi-stage chain: treat as signals to review, "
+                       "not a confirmed intrusion.")
+    reasons.append("Biggest contributors: " + "; ".join(
+        f"{c['title']} ({c['severity']}{', x' + str(c['findings']) if c['findings'] > 1 else ''})"
+        for c in contributors[:3]) + ".")
+    return {"score": score, "level": risk_level(score), "reasons": reasons, "contributors": contributors}
 
 
 def risk_score(findings: list[Finding]) -> int:
-    remaining = 1.0
-    for f in findings:
-        remaining *= 1 - SEVERITY_WEIGHT.get(f.severity, 0)
-    return round(100 * (1 - remaining))
+    return risk_assessment(findings)["score"]
 
 
 def risk_level(score: int) -> str:
@@ -124,7 +170,7 @@ def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | N
     posture = [f for f in live if f.category != "attack"]
     idents = identities.build(attack, identity_map)
 
-    score = risk_score(attack)
+    risk = risk_assessment(attack)
     sev_counts = Counter(f.severity for f in attack)
     attributed_ids = {e.id for f in attack for e in f.attributed()}
     malicious = [e for e in events if e.id in attributed_ids]
@@ -133,7 +179,7 @@ def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | N
         "tool": {"name": "TraceVault", "version": __version__},
         "case": case or {},
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "risk": {"score": score, "level": risk_level(score)},
+        "risk": risk,
         "stats": {
             "events": len(events),
             "flagged_events": len(flagged),

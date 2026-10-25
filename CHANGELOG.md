@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Risk score counts behaviours, not alerts.** Each detection rule counts once; further findings
+  of the same rule add at most 50% of its weight; distinct behaviours combine as independent
+  evidence. A clean laptop with 6 harmless service installs went from 62 (high) to 22 (medium).
+  The demo breaches stay at 100. Across 28 attack datasets one dropped a level (`psexec_service`,
+  high to medium). Details in docs/VALIDATION.md.
+- **"Why this risk score"**: every score comes with its reasons and each behaviour's contribution,
+  shown in the dashboard, the report and the CLI.
+
 ## 0.4.0 - 2026-10-25
 
 - **Redesigned dashboard:** light and dark themes (following the system setting, with a toggle),

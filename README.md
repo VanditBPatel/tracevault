@@ -246,6 +246,23 @@ When auto-linking is wrong or incomplete, put an identity map in the case folder
 The map's SHA-256 is written to the custody ledger with each analysis, so the linking used for a
 report is on record.
 
+## Risk score
+
+The 0–100 score measures how strongly the evidence points to a compromise. It counts **distinct
+suspicious behaviours (rules), not alerts**:
+
+- Each behaviour counts once, weighted by severity (critical 50, high 30, medium 15, low 5).
+- More findings of the same rule add at most 50% of its weight. Twenty installs by an endpoint
+  agent are one behaviour, not twenty attacks.
+- Different behaviours combine as independent evidence, so an attack that moves through several
+  ATT&CK stages scores far higher than any amount of repetition.
+- Posture findings and analyst-suppressed findings are not counted.
+
+Levels: low < 20, medium 20–49, high 50–79, critical ≥ 80. Every score comes with its reasons
+and each behaviour's contribution, in the dashboard ("Why this risk score"), the report and the
+CLI. On a real laptop's 24 hours of logs (6 harmless service installs from one rule) the score is
+22 (medium). The demo breaches stay at 100 (critical). See [docs/VALIDATION.md](docs/VALIDATION.md#risk-score-calibration).
+
 ## Measured accuracy
 
 The Windows rules are scored against public attack recordings from OTRF Security-Datasets

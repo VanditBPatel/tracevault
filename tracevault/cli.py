@@ -21,6 +21,8 @@ SEV_TAG = {"low": "LOW ", "medium": "MED ", "high": "HIGH", "critical": "CRIT"}
 def _print_summary(result: dict) -> None:
     s, r = result["stats"], result["risk"]
     print(f"\n  Risk score  {r['score']}/100 ({r['level'].upper()})")
+    for reason in r.get("reasons", []):
+        print(f"              {reason}")
     print(f"  Events      {s['events']} analysed, {s['flagged_events']} flagged")
     print(f"  Findings    {s['findings']}  " + "  ".join(f"{k}={v}" for k, v in s["by_severity"].items())
           + f"   (+{s['posture_findings']} posture, {s.get('suppressed_findings', 0)} suppressed)")

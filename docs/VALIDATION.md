@@ -75,6 +75,32 @@ The held-out findings above were then used to tune. The exclusions are listed in
 **100% with 0 unexplained hits**. These later runs are *in-sample*: they show the tuning worked
 on this data, not how well the rules generalise. The 82% above is the number to quote.
 
+## Risk score calibration
+
+The original risk score added every finding as independent evidence. A clean laptop collection
+(24 hours of Security and System logs from the maintainer's own machine, no attack) produced 6
+"New service installed" findings from security software and app updates. Those 6 findings from 1
+rule scored **62 (high)**.
+
+The score now counts distinct behaviours (rules) and caps the effect of repeats (see the
+README). Results on every case available, before and after:
+
+| Case | Findings | Rules | Tactics | Before | After |
+|---|---|---|---|---|---|
+| Clean laptop, 24 h | 6 medium | 1 | 1 | 62 high | **22 medium** |
+| CASE-001 demo (on-prem breach) | 19 | 13 | 9 | 100 critical | 100 critical |
+| CASE-002 demo (cloud takeover) | 16 | 15 | 7 | 100 critical | 100 critical |
+| 28 OTRF attack datasets | 1–6 each | | 1–3 | 4 critical, 19 high, 4 medium, 1 low | 4 critical, 18 high, 5 medium, 1 low |
+
+**One attack dataset dropped a level.** `psexec_service` went from 58 (high) to 47 (medium). Its
+three findings come from two rules: the same encoded-PowerShell stager seen twice, plus a service
+install. That follows directly from not letting repeats add up, and we accept the trade-off. A
+rule that recognises "a new service launching encoded PowerShell" as one strong combined
+behaviour would be the right fix, rather than weighting repeats again.
+
+Limits: there is only one benign collection (one laptop, one day), so calibration on more
+ordinary machines (servers, domain controllers, developer workstations) is still needed.
+
 ## Limits of this evaluation
 
 - **Small:** 28 datasets and 31 expected detections. One more miss moves the rate by several points.

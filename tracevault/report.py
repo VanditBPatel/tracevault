@@ -167,6 +167,19 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
 
     # ---------- summary & story
     summary = "".join(f"<p>{_e(p)}</p>" for p in executive_summary(result, verification))
+    contrib_rows = "".join(
+        f"<tr><td>{_sev(c['severity'])}</td><td>{_e(c['title'])}</td><td class='num'>{c['findings']}</td>"
+        f"<td class='num'>{c['points']}</td></tr>" for c in risk.get("contributors", [])[:8])
+    risk_why = ""
+    if risk.get("reasons"):
+        risk_why = (f'<div class="why"><div class="label">How the risk score was reached</div><ul>'
+                    + "".join(f"<li>{_e(x)}</li>" for x in risk["reasons"]) + "</ul>"
+                    + (f"<table><thead><tr><th>Severity</th><th>Behaviour (rule)</th><th class='num'>Findings</th>"
+                       f"<th class='num'>Points</th></tr></thead><tbody>{contrib_rows}</tbody></table>"
+                       if contrib_rows else "")
+                    + '<p class="small muted">Each distinct behaviour counts once; further findings of the same rule add '
+                      "at most 50% of its weight. Behaviours combine as independent evidence, so different stages of an "
+                      "attack raise the score far more than repeats.</p></div>")
     steps = []
     for line in result["narrative"]:
         if line.startswith(("Compromised identities:", "Accounts created by the attacker:")):
@@ -342,6 +355,8 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
   .banner {{ padding: 12px 16px; border-radius: 10px; margin-bottom: 14px; font-size: 13px; }}
   .banner.ok {{ background: #ecfdf5; border: 1px solid #a7f3d0; }} .banner.bad {{ background: #fff1f2; border: 1px solid #fecdd3; }}
   .method p {{ color: var(--text2); margin: 0 0 8px; }}
+  .why {{ margin-top: 16px; padding: 14px 18px; border-radius: 12px; background: var(--soft); break-inside: avoid; }}
+  .why ul {{ margin: 6px 0 10px; padding-left: 20px; color: var(--text2); }} .why table {{ background: #fff; border-radius: 8px; }}
   .print-only {{ display: none; }}
   .footer {{ margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }}
   .printbar {{ position: sticky; top: 0; z-index: 5; display: flex; justify-content: center; gap: 10px; padding: 10px; background: rgb(238 242 247 / .9); backdrop-filter: blur(8px); }}
@@ -373,6 +388,7 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
   <section id="summary" class="summary">
     <h2><span class="no">1</span> Executive summary</h2>
     {summary}
+    {risk_why}
   </section>
 
   <section id="story">

@@ -125,6 +125,22 @@
   .gauge b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 17px; font-weight: 800; }
   .grid-2 { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 
+  /* ---------- risk explanation */
+  .why { padding: 0; }
+  .why summary { list-style: none; cursor: pointer; display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 20px; }
+  .why summary::-webkit-details-marker { display: none; }
+  .why summary::after { content: "Show details"; font-size: 12px; font-weight: 600; color: var(--accent); }
+  .why[open] summary::after { content: "Hide details"; }
+  .why summary > span { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+  .why summary .muted { flex: 1; min-width: 200px; }
+  .why ul { margin: 0; padding: 0 20px 6px 40px; color: var(--text-2); font-size: 13px; }
+  .why ul li { margin-bottom: 4px; }
+  .why .section-label { margin: 10px 20px 8px; }
+  .contribs { display: grid; gap: 6px; padding: 0 20px 18px; }
+  .contrib { display: grid; grid-template-columns: 76px minmax(0, 1fr) 140px 28px; gap: 10px; align-items: center; font-size: 13px; }
+  .contrib .mono { text-align: right; color: var(--muted); }
+  @media (max-width: 760px) { .contrib { grid-template-columns: 70px minmax(0, 1fr) 28px; } .contrib .meter { display: none; } }
+
   /* ---------- storyline */
   .callouts { display: grid; gap: 10px; margin-bottom: 16px; }
   .callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; font-size: 13.5px;
@@ -586,6 +602,14 @@ function overviewView() {
       <div class="card kpi" style="--c:var(--medium)"><div class="kicon">${icon("clock")}</div><div><div class="label">Attacker window (UTC)</div>
         <div class="value" style="font-size:22px">${esc(dwell)}</div><div class="hint">${s.dwell ? esc(day(s.dwell[0])) : "no attacker activity"}</div></div></div>
     </div>
+
+    ${(r.reasons || []).length ? `<details class="card why" style="margin-bottom:18px">
+      <summary><span>${icon("activity")} <b>Why this risk score</b></span><span class="muted">${esc(r.reasons[0])}</span></summary>
+      <ul>${r.reasons.slice(1).map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+      ${(r.contributors || []).length ? `<div class="section-label">Contribution by behaviour</div><div class="contribs">${r.contributors.map(c => `
+        <div class="contrib"><span class="badge" style="--c:${sevVar(c.severity)}">${esc(c.severity)}</span><span>${esc(c.title)}${c.findings > 1 ? ` <span class="muted">×${c.findings}</span>` : ""}</span>
+          <div class="meter"><i style="width:${Math.min(100, c.points)}%;background:${sevVar(c.severity)}"></i></div><span class="mono">${c.points}</span></div>`).join("")}</div>` : ""}
+    </details>` : ""}
 
     <div class="grid-2">
       <div class="card">
