@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-10-25
 
 - **Redesigned dashboard:** light and dark themes (following the system setting, with a toggle),
   Overview / Findings / Timeline / Custody tabs, a numbered "What happened" storyline,
