@@ -489,6 +489,48 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 400)
 
 
+class ServicePowerShellRuleTests(unittest.TestCase):
+    """TV-040: the service manager running encoded PowerShell (PsExec / SMBExec / Empire style)."""
+
+    SVC = "C:\\Windows\\System32\\services.exe"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rule = next(r for r in detections.load_rules() if r["id"] == "TV-040")
+
+    def _ev(self, kind, **fields):
+        from datetime import datetime, timezone
+        from tracevault.models import Event
+        return Event(ts=datetime(2026, 1, 1, tzinfo=timezone.utc), source="t", kind=kind, host="h",
+                     message="m", raw="", fields=fields)
+
+    def test_matches_service_launching_encoded_powershell(self):
+        for cmd in ("cmd.exe /C start /b powershell -noP -sta -w 1 -enc SQBm",
+                    "powershell.exe -NoProfile -EncodedCommand SQBm",
+                    "powershell -ec SQBm",
+                    '"C:\\WINDOWS\\powershell.exe" -e SQBm'):
+            self.assertTrue(detections.matches(self._ev("process.create", parent_process=self.SVC, command_line=cmd),
+                                               self.rule["match"]), cmd)
+
+    def test_matches_service_installed_with_encoded_powershell(self):
+        image = "%COMSPEC% /C start /b C:\\Windows\\System32\\WindowsPowershell\\v1.0\\powershell -noP -enc SQBm"
+        self.assertTrue(detections.matches(self._ev("service.install", image_path=image), self.rule["match"]))
+
+    def test_ignores_lookalikes(self):
+        negatives = [
+            self._ev("process.create", parent_process=self.SVC, command_line="powershell.exe -ExecutionPolicy Bypass -File C:\\agent\\run.ps1"),
+            self._ev("process.create", parent_process=self.SVC, command_line="powershell -exec bypass -c Get-Date"),
+            self._ev("process.create", parent_process="C:\\Windows\\explorer.exe", command_line="powershell -enc SQBm"),
+            self._ev("service.install", image_path="C:\\Program Files\\Agent\\agent.exe"),
+        ]
+        for e in negatives:
+            self.assertFalse(detections.matches(e, self.rule["match"]), e.fields)
+
+    def test_not_in_demo_cases(self):
+        ids = [f.rule_id for f in detections.run(sample_events()) + detections.run(cloud_events())]
+        self.assertNotIn("TV-040", ids)
+
+
 class RiskScoreTests(unittest.TestCase):
     """The score counts distinct behaviours, not alerts."""
 

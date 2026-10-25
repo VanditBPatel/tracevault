@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **New rule TV-040 "Service launched encoded PowerShell"** (critical, T1569.002): the Windows
+  service manager starting encoded PowerShell (directly or through `cmd.exe`), or a service
+  installed whose command runs it. This is the mark of PsExec, Impacket smbexec, Empire and
+  Cobalt Strike remote execution. It accepts every abbreviation of `-EncodedCommand` and ignores
+  `-ExecutionPolicy`. On 28 attack datasets it fires only in the two PsExec-style ones, and their
+  risk scores go from 47 (medium) and 53 (high) to 80 and 82 (critical). This resolves the one
+  level drop caused by the 0.4.1 risk change. Nothing else changes.
+
 ## 0.4.1 - 2026-10-25
 
 - **Risk score counts behaviours, not alerts.** Each detection rule counts once; further findings

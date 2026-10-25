@@ -94,9 +94,20 @@ README). Results on every case available, before and after:
 
 **One attack dataset dropped a level.** `psexec_service` went from 58 (high) to 47 (medium). Its
 three findings come from two rules: the same encoded-PowerShell stager seen twice, plus a service
-install. That follows directly from not letting repeats add up, and we accept the trade-off. A
-rule that recognises "a new service launching encoded PowerShell" as one strong combined
-behaviour would be the right fix, rather than weighting repeats again.
+install. That follows directly from not letting repeats add up.
+
+**Resolved by a new rule, not by re-weighting repeats.** TV-040 "Service launched encoded
+PowerShell" detects the behaviour itself: the service manager starting encoded PowerShell, or a
+service installed whose command runs it. That is the mark of PsExec-style remote execution. On
+all 28 datasets it fires only in the two PsExec-style ones (`psexec_service`, `smbexec_service`)
+and nowhere else. Those two were then added to its expected detections, so this result is
+in-sample. Scores:
+
+| Case | Before TV-040 | With TV-040 |
+|---|---|---|
+| `psexec_service` | 47 medium | **80 critical** |
+| `smbexec_service` | 53 high | **82 critical** |
+| Clean laptop, demos, other 26 datasets | unchanged | unchanged |
 
 Limits: there is only one benign collection (one laptop, one day), so calibration on more
 ordinary machines (servers, domain controllers, developer workstations) is still needed.

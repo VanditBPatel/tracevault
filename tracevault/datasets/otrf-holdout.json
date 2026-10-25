@@ -108,7 +108,8 @@
       "path": "lateral_movement/host/empire_smbexec_dcerpc_smb_svcctl.zip",
       "technique": "T1569.002",
       "expect": [
-        "TV-022"
+        "TV-022",
+        "TV-040"
       ],
       "also_ok": {
         "TV-020": "Reviewed: the SMBExec service command runs Empire's encoded PowerShell stager."

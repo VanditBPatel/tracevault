@@ -176,7 +176,7 @@ The "host" of a cloud event is its tenant: `aws:<account-id>`, `m365`, `okta`.
 ## Detection rules
 
 Rules live in [tracevault/rules.json](tracevault/rules.json) — readable by analysts and reviewable
-in a pull request. 38 rules ship today: 25 for hosts, web servers and Windows endpoints (10 of
+in a pull request. 39 rules ship today: 26 for hosts, web servers and Windows endpoints (11 of
 them for Windows endpoint techniques seen through Sysmon / process auditing), and 13 for cloud and
 identity (one of them a posture rule). Four rule types:
 

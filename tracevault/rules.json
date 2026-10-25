@@ -263,6 +263,23 @@
     "match": {"kind": "thread.remote", "not": {"source_image": "\\\\(csrss|wininit|services|MsMpEng|dwm|System)\\.exe$|^System$"}}
   },
   {
+    "id": "TV-040",
+    "title": "Service launched encoded PowerShell",
+    "type": "match",
+    "severity": "critical",
+    "tactic": "Execution",
+    "technique": "T1569.002",
+    "technique_name": "System Services: Service Execution",
+    "description": "The Windows service manager started encoded PowerShell (directly or through cmd.exe), or a service was installed whose command runs encoded PowerShell. This is how PsExec-style tools and attack frameworks (Empire, Cobalt Strike, Impacket smbexec) run code on a remote machine. Legitimate software rarely hides a service's command this way.",
+    "match": {
+      "kind": ["process.create", "service.install"],
+      "any": [
+        {"parent_process": "\\\\services\\.exe$", "command_line": "powershell(\\.exe)?\"?\\s(.*\\s)?-(e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)\\s"},
+        {"image_path": "powershell(\\.exe)?\"?\\s(.*\\s)?-(e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)\\s"}
+      ]
+    }
+  },
+  {
     "id": "TV-100",
     "title": "Password brute force",
     "type": "threshold",
