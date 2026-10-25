@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tracevault",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "tracevault", "serve", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}

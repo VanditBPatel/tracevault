@@ -1,0 +1,17 @@
+{"TimeCreated":"2026-10-21T01:35:10Z","EventID":4624,"Computer":"FIN-WS02","TargetUserName":"bob","LogonType":2,"IpAddress":"-"}
+{"TimeCreated":"2026-10-21T01:36:44Z","EventID":4688,"Computer":"FIN-WS02","SubjectUserName":"bob","NewProcessName":"C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE","ParentProcessName":"C:\\Windows\\explorer.exe","CommandLine":"\"EXCEL.EXE\" \"Q3-forecast.xlsx\""}
+{"TimeCreated":"2026-10-21T02:40:02Z","EventID":4625,"Computer":"FIN-WS02","TargetUserName":"Administrator","LogonType":3,"IpAddress":"10.0.0.15"}
+{"TimeCreated":"2026-10-21T02:40:05Z","EventID":4625,"Computer":"FIN-WS02","TargetUserName":"Administrator","LogonType":3,"IpAddress":"10.0.0.15"}
+{"TimeCreated":"2026-10-21T02:40:09Z","EventID":4625,"Computer":"FIN-WS02","TargetUserName":"Administrator","LogonType":3,"IpAddress":"10.0.0.15"}
+{"TimeCreated":"2026-10-21T02:40:12Z","EventID":4625,"Computer":"FIN-WS02","TargetUserName":"Administrator","LogonType":3,"IpAddress":"10.0.0.15"}
+{"TimeCreated":"2026-10-21T02:40:16Z","EventID":4625,"Computer":"FIN-WS02","TargetUserName":"Administrator","LogonType":3,"IpAddress":"10.0.0.15"}
+{"TimeCreated":"2026-10-21T02:40:21Z","EventID":4625,"Computer":"FIN-WS02","TargetUserName":"Administrator","LogonType":3,"IpAddress":"10.0.0.15"}
+{"TimeCreated":"2026-10-21T02:41:37Z","EventID":4624,"Computer":"FIN-WS02","TargetUserName":"Administrator","LogonType":3,"IpAddress":"10.0.0.15"}
+{"TimeCreated":"2026-10-21T02:44:10Z","EventID":4688,"Computer":"FIN-WS02","SubjectUserName":"Administrator","NewProcessName":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ParentProcessName":"C:\\Windows\\System32\\wsmprovhost.exe","CommandLine":"powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA"}
+{"TimeCreated":"2026-10-21T02:45:30Z","EventID":4688,"Computer":"FIN-WS02","SubjectUserName":"Administrator","NewProcessName":"C:\\Windows\\System32\\whoami.exe","ParentProcessName":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","CommandLine":"whoami /all"}
+{"TimeCreated":"2026-10-21T02:46:51Z","EventID":4688,"Computer":"FIN-WS02","SubjectUserName":"Administrator","NewProcessName":"C:\\ProgramData\\pd64.exe","ParentProcessName":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","CommandLine":"C:\\ProgramData\\pd64.exe -accepteula -ma lsass.exe C:\\ProgramData\\lsass.dmp"}
+{"TimeCreated":"2026-10-21T02:50:03Z","EventID":7045,"Computer":"FIN-WS02","ServiceName":"WinUpdateSvc","ImagePath":"C:\\ProgramData\\svc\\winupd.exe","SubjectUserName":"Administrator"}
+{"TimeCreated":"2026-10-21T02:52:19Z","EventID":4720,"Computer":"FIN-WS02","SubjectUserName":"Administrator","TargetUserName":"helpdesk$"}
+{"TimeCreated":"2026-10-21T02:52:40Z","EventID":4732,"Computer":"FIN-WS02","SubjectUserName":"Administrator","TargetUserName":"Administrators","MemberName":"helpdesk$"}
+{"TimeCreated":"2026-10-21T02:58:11Z","EventID":4688,"Computer":"FIN-WS02","SubjectUserName":"bob","NewProcessName":"C:\\Windows\\System32\\notepad.exe","ParentProcessName":"C:\\Windows\\explorer.exe","CommandLine":"notepad.exe"}
+{"TimeCreated":"2026-10-21T03:05:47Z","EventID":1102,"Computer":"FIN-WS02","SubjectUserName":"Administrator"}

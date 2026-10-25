@@ -1,0 +1,21 @@
+Oct 21 01:30:02 web-01 CRON[2211]: pam_unix(cron:session): session opened for user root by (uid=0)
+Oct 21 01:42:17 web-01 sshd[2290]: Accepted publickey for alice from 10.0.0.22 port 50112 ssh2: ED25519 SHA256:9f2cQ1
+Oct 21 01:42:17 web-01 sshd[2290]: pam_unix(sshd:session): session opened for user alice by (uid=0)
+Oct 21 01:44:05 web-01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/systemctl restart nginx
+Oct 21 01:51:40 web-01 sshd[2290]: pam_unix(sshd:session): session closed for user alice
+Oct 21 02:10:03 web-01 sshd[2411]: Failed password for invalid user admin from 203.0.113.45 port 51122 ssh2
+Oct 21 02:10:09 web-01 sshd[2413]: Failed password for invalid user admin from 203.0.113.45 port 51130 ssh2
+Oct 21 02:10:16 web-01 sshd[2415]: Failed password for root from 203.0.113.45 port 51141 ssh2
+Oct 21 02:10:24 web-01 sshd[2417]: Failed password for root from 203.0.113.45 port 51150 ssh2
+Oct 21 02:10:39 web-01 sshd[2419]: Failed password for invalid user test from 203.0.113.45 port 51166 ssh2
+Oct 21 02:11:02 web-01 sshd[2421]: Failed password for deploy from 203.0.113.45 port 51190 ssh2
+Oct 21 02:11:31 web-01 sshd[2423]: Failed password for deploy from 203.0.113.45 port 51204 ssh2
+Oct 21 02:12:05 web-01 sshd[2425]: Failed password for deploy from 203.0.113.45 port 51233 ssh2
+Oct 21 02:12:40 web-01 sshd[2427]: Accepted password for deploy from 203.0.113.45 port 51251 ssh2
+Oct 21 02:12:40 web-01 sshd[2427]: pam_unix(sshd:session): session opened for user deploy by (uid=0)
+Oct 21 02:14:58 web-01 sudo:   deploy : TTY=pts/1 ; PWD=/home/deploy ; USER=root ; COMMAND=/bin/bash
+Oct 21 02:16:11 web-01 useradd[2502]: new user: name=sysbackup, UID=0, GID=0, home=/var/lib/sysbackup, shell=/bin/bash
+Oct 21 02:17:30 web-01 crontab[2519]: (root) REPLACE (root)
+Oct 21 02:35:12 web-01 sshd[2601]: Failed password for alice from 10.0.0.22 port 50340 ssh2
+Oct 21 02:35:19 web-01 sshd[2603]: Accepted publickey for alice from 10.0.0.22 port 50342 ssh2: ED25519 SHA256:9f2cQ1
+Oct 21 03:12:44 web-01 sshd[2427]: pam_unix(sshd:session): session closed for user deploy

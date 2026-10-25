@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceVault</title>
+<style>
+  :root {
+    --bg: #0b1017; --panel: #121a24; --panel-2: #182231; --line: #233042;
+    --text: #e6edf5; --muted: #8696aa; --accent: #2dd4bf;
+    --low: #60a5fa; --medium: #facc15; --high: #fb923c; --critical: #f43f5e; --ok: #34d399;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  .logo { font-weight: 800; letter-spacing: .5px; } .logo span { color: var(--accent); }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  button, select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #04201c; border-color: var(--accent); font-weight: 700; }
+  .layout { display: grid; grid-template-columns: 250px 1fr; min-height: calc(100vh - 53px); }
+  aside { border-right: 1px solid var(--line); padding: 14px; background: var(--panel); }
+  aside h3 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .case-item { padding: 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; margin-bottom: 6px; }
+  .case-item:hover { background: var(--panel-2); }
+  .case-item.active { border-color: var(--accent); background: var(--panel-2); }
+  .case-item .cid { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .case-item .ct { font-size: 13px; margin: 2px 0; }
+  main { padding: 20px; min-width: 0; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  .case-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between; }
+  .case-head h1 { margin: 0; font-size: 20px; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .integrity { border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700; border: 1px solid; }
+  .integrity.ok { color: var(--ok); border-color: var(--ok); } .integrity.bad { color: var(--critical); border-color: var(--critical); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 18px 0; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .kpi .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+  .kpi .value { font-size: 28px; font-weight: 800; margin-top: 2px; }
+  .kpi .hint { color: var(--muted); font-size: 12px; }
+  .gauge { height: 6px; background: var(--panel-2); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .gauge > div { height: 100%; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .card h2 { margin: 0 0 12px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .count { color: var(--muted); font-weight: 400; }
+  .grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+  .story li { margin-bottom: 6px; }
+  .chain { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+  .tactic { border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-height: 76px; font-size: 11px; color: var(--muted); }
+  .tactic.hit { color: var(--text); background: color-mix(in srgb, var(--sev) 14%, transparent); border-color: var(--sev); }
+  .tactic .n { font-size: 20px; font-weight: 800; color: var(--sev); }
+  .tactic .tech { font-family: var(--mono); font-size: 10px; }
+  .sev { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #0b1017; background: var(--c); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr.finding { cursor: pointer; } tr.finding:hover td, tr.finding.sel td { background: var(--panel-2); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  .timeline { max-height: 520px; overflow: auto; border-top: 1px solid var(--line); }
+  .ev { display: grid; grid-template-columns: 74px 120px 110px 1fr; gap: 10px; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; align-items: baseline; }
+  .ev.flag { border-left: 3px solid var(--critical); background: color-mix(in srgb, var(--critical) 6%, transparent); }
+  .ev.hl { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .ev .msg { word-break: break-word; }
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .tools label { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .chip { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; margin: 1px 2px 1px 0; }
+  .chip.ext { border-color: var(--critical); color: var(--critical); }
+  .problems { color: var(--critical); margin: 8px 0 0; }
+  @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } .chain { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    main { padding: 16px; } .chain { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .ev { grid-template-columns: 64px 1fr; } .ev .src, .ev .kind { display: none; }
+    header .sub { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Trace<span>Vault</span></div>
+  <div class="sub">Evidence-first incident triage</div>
+  <div class="spacer"></div>
+  <button id="reanalyze" hidden>Re-run analysis</button>
+  <button id="report" class="primary" hidden>Open report</button>
+</header>
+<div class="layout">
+  <aside><h3>Cases</h3><div id="cases"></div></aside>
+  <main id="main"><div class="empty">Loading cases...</div></main>
+</div>
+
+<script>
+const SEV = ["low", "medium", "high", "critical"];
+const sevColor = s => `var(--${s || "line"})`;
+const $ = (sel, el = document) => el.querySelector(sel);
+// Log content is attacker-controlled: everything rendered goes through esc().
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const time = iso => iso ? iso.slice(11, 19) : "-";
+let current = null, state = { sev: "all", flaggedOnly: true, selected: null };
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return r.json();
+}
+
+async function loadCases(selectId) {
+  const cases = await api("/api/cases");
+  const box = $("#cases");
+  if (!cases.length) {
+    box.innerHTML = "";
+    $("#main").innerHTML = `<div class="empty">No cases yet.<br><br>Run <span class="mono">python -m tracevault demo</span> to load the sample breach.</div>`;
+    return;
+  }
+  box.innerHTML = cases.map(c => `
+    <div class="case-item" data-id="${esc(c.id)}">
+      <div class="cid">${esc(c.id)}</div>
+      <div class="ct">${esc(c.title)}</div>
+      <div class="muted" style="font-size:12px">${c.risk ? `<span class="sev" style="--c:${sevColor(c.risk.level)}">${esc(c.risk.level)}</span> ${c.risk.score}/100 &middot; ${c.findings} findings` : "not analysed"}</div>
+    </div>`).join("");
+  box.querySelectorAll(".case-item").forEach(el => el.onclick = () => openCase(el.dataset.id));
+  openCase(selectId || cases[0].id);
+}
+
+async function openCase(id) {
+  document.querySelectorAll(".case-item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+  current = await api(`/api/cases/${encodeURIComponent(id)}`);
+  state.selected = null;
+  $("#reanalyze").hidden = false;
+  $("#report").hidden = !current.analysis;
+  render();
+}
+
+function render() {
+  const { case: c, analysis: a, verification: v, ledger } = current;
+  const main = $("#main");
+  const integrity = `<span class="integrity ${v.ok ? "ok" : "bad"}">${v.ok ? "&#10003; Evidence integrity verified" : "&#9888; Integrity check failed"}</span>`;
+  const head = `
+    <div class="case-head">
+      <div><h1>${esc(c.title)}</h1>
+        <div class="meta"><span class="mono">${esc(c.id)}</span> &middot; examiner ${esc(c.examiner)} &middot; opened ${esc(c.created_at)}</div></div>
+      <div>${integrity}</div>
+    </div>`;
+  if (!a) {
+    main.innerHTML = head + `<div class="card" style="margin-top:16px">${ledger.length} ledger entries. This case has not been analysed yet &mdash; click <b>Re-run analysis</b>.</div>`;
+    return;
+  }
+  const s = a.stats, r = a.risk;
+  const dwell = s.dwell ? `${time(s.dwell[0]).slice(0,5)} &rarr; ${time(s.dwell[1]).slice(0,5)}` : "-";
+  const findings = a.findings.filter(f => state.sev === "all" || f.severity === state.sev);
+  const sel = state.selected != null ? a.findings[state.selected] : null;
+  const hl = new Set(sel ? sel.event_ids : []);
+  const events = a.timeline.filter(e => sel ? hl.has(e.id) : (!state.flaggedOnly || e.rules.length));
+
+  main.innerHTML = head + `
+    <div class="kpis">
+      <div class="kpi"><div class="label">Risk score</div><div class="value" style="color:${sevColor(r.level)}">${r.score}<span class="muted" style="font-size:14px">/100</span></div>
+        <div class="gauge"><div style="width:${r.score}%;background:${sevColor(r.level)}"></div></div></div>
+      <div class="kpi"><div class="label">Findings</div><div class="value">${s.findings}</div>
+        <div class="hint">${SEV.slice().reverse().map(x => `${s.by_severity[x]} ${x}`).join(" &middot; ")}</div></div>
+      <div class="kpi"><div class="label">Events</div><div class="value">${s.events}</div><div class="hint">${s.flagged_events} flagged across ${Object.keys(s.by_source).length} artifacts</div></div>
+      <div class="kpi"><div class="label">Attacker window (UTC)</div><div class="value" style="font-size:22px">${dwell}</div><div class="hint">${s.dwell ? esc(s.dwell[0].slice(0,10)) : ""}</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card"><h2>Storyline</h2><ul class="story">${a.narrative.map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>
+      <div class="card"><h2>Indicators of compromise</h2>
+        <div class="muted" style="font-size:11px;margin-bottom:4px">IP ADDRESSES</div>
+        ${a.iocs.ips.map(x => `<span class="chip ${x.external ? "ext" : ""}" title="${x.external ? "external" : "internal"}">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
+        <div class="muted" style="font-size:11px;margin:10px 0 4px">ACCOUNTS</div>
+        ${a.iocs.users.map(x => `<span class="chip">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
+        <div class="muted" style="font-size:11px;margin:10px 0 4px">HOSTS</div>
+        ${a.iocs.hosts.map(x => `<span class="chip">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
+      </div>
+    </div>
+
+    <div class="card"><h2>MITRE ATT&amp;CK kill chain</h2>
+      <div class="chain">${a.attack_chain.map(t => `
+        <div class="tactic ${t.count ? "hit" : ""}" style="--sev:${sevColor(t.max_severity)}">
+          <div><b>${esc(t.tactic)}</b></div><div class="n">${t.count || ""}</div>
+          ${t.techniques.map(x => `<div class="tech" title="${esc(x.name)}">${esc(x.id)}</div>`).join("")}
+        </div>`).join("")}</div>
+    </div>
+
+    <div class="card"><h2>Findings <span class="count">${findings.length}</span></h2>
+      <div class="tools"><label>Severity <select id="sevFilter">
+        ${["all", ...SEV.slice().reverse()].map(x => `<option ${x === state.sev ? "selected" : ""}>${x}</option>`).join("")}
+      </select></label><span class="muted" style="font-size:12px">Click a finding to see its evidence events.</span></div>
+      <div class="scroll"><table>
+        <tr><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th></tr>
+        ${findings.map(f => { const idx = a.findings.indexOf(f); return `
+          <tr class="finding ${idx === state.selected ? "sel" : ""}" data-idx="${idx}">
+            <td class="mono">${time(f.ts)}</td>
+            <td><span class="sev" style="--c:${sevColor(f.severity)}">${esc(f.severity)}</span></td>
+            <td><b>${esc(f.title)}</b><div class="muted" style="font-size:12px">${esc(f.summary)}</div></td>
+            <td class="mono">${esc(f.technique)}<div class="muted">${esc(f.tactic)}</div></td>
+            <td>${[...f.entities.hosts, ...f.entities.users, ...f.entities.ips].map(x => `<span class="chip">${esc(x)}</span>`).join("")}</td>
+          </tr>`; }).join("")}
+      </table></div>
+    </div>
+
+    <div class="card"><h2>Super-timeline <span class="count">${events.length} of ${a.timeline.length} events</span></h2>
+      <div class="tools">
+        ${sel ? `<span>Evidence for <b>${esc(sel.title)}</b></span><button id="clearSel">Show all</button>` :
+          `<label><input type="checkbox" id="flagOnly" ${state.flaggedOnly ? "checked" : ""}> Flagged events only</label>`}
+      </div>
+      <div class="timeline">${events.map(e => `
+        <div class="ev ${e.rules.length ? "flag" : ""} ${hl.has(e.id) ? "hl" : ""}">
+          <span class="mono">${time(e.ts)}</span>
+          <span class="mono src muted" title="${esc(e.source)}">${esc(e.host)}</span>
+          <span class="mono kind">${esc(e.kind)}</span>
+          <span class="msg">${esc(e.message)} ${e.rules.map(rid => `<span class="chip">${esc(rid)}</span>`).join("")}</span>
+        </div>`).join("")}</div>
+    </div>
+
+    <div class="card"><h2>Chain of custody <span class="count">${ledger.length} entries</span></h2>
+      <div class="muted" style="font-size:12px">Ledger head <span class="mono">${esc(v.head || "-")}</span></div>
+      ${v.problems.length ? `<ul class="problems">${v.problems.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
+      <div class="scroll" style="margin-top:10px"><table>
+        <tr><th>#</th><th>Time</th><th>Actor</th><th>Action</th><th>Evidence</th><th>SHA-256</th><th>Status</th></tr>
+        ${ledger.map(e => { const ev = v.evidence.find(x => x.file === e.evidence); return `
+          <tr><td>${e.seq}</td><td class="mono">${esc(e.ts.replace("T", " ").slice(0, 19))}</td><td>${esc(e.actor)}</td>
+          <td class="mono">${esc(e.action)}</td><td>${esc(e.evidence || "")}</td>
+          <td class="mono" title="${esc(e.sha256 || "")}">${esc((e.sha256 || "").slice(0, 16))}</td>
+          <td>${ev ? (ev.ok ? '<span style="color:var(--ok)">&#10003; match</span>' : '<span style="color:var(--critical)">&#10007; changed</span>') : ""}</td></tr>`; }).join("")}
+      </table></div>
+    </div>`;
+
+  $("#sevFilter").onchange = e => { state.sev = e.target.value; render(); };
+  main.querySelectorAll("tr.finding").forEach(tr => tr.onclick = () => {
+    const idx = Number(tr.dataset.idx);
+    state.selected = state.selected === idx ? null : idx;
+    render();
+  });
+  const flag = $("#flagOnly"); if (flag) flag.onchange = e => { state.flaggedOnly = e.target.checked; render(); };
+  const clear = $("#clearSel"); if (clear) clear.onclick = () => { state.selected = null; render(); };
+}
+
+$("#report").onclick = () => window.open(`/api/cases/${encodeURIComponent(current.case.id)}/report`, "_blank");
+$("#reanalyze").onclick = async () => {
+  const btn = $("#reanalyze"); btn.disabled = true; btn.textContent = "Analysing...";
+  try { await api(`/api/cases/${encodeURIComponent(current.case.id)}/analyze`, { method: "POST" }); await loadCases(current.case.id); }
+  catch (err) { alert(err.message); }
+  finally { btn.disabled = false; btn.textContent = "Re-run analysis"; }
+};
+loadCases().catch(err => { $("#main").innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`; });
+</script>
+</body>
+</html>

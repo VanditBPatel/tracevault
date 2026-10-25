@@ -1,0 +1,157 @@
+"""Command-line interface:  python -m tracevault <command> ..."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from . import __version__, analysis, detections, parsers, workflow
+from .custody import Case
+
+SAMPLES = Path(__file__).resolve().parent.parent / "samples" / "case-001"
+SEV_TAG = {"low": "LOW ", "medium": "MED ", "high": "HIGH", "critical": "CRIT"}
+
+
+def _print_summary(result: dict) -> None:
+    s, r = result["stats"], result["risk"]
+    print(f"\n  Risk score  {r['score']}/100 ({r['level'].upper()})")
+    print(f"  Events      {s['events']} analysed, {s['flagged_events']} flagged")
+    print(f"  Findings    {s['findings']}  " + "  ".join(f"{k}={v}" for k, v in s["by_severity"].items()))
+    print("\n  Storyline")
+    for line in result["narrative"]:
+        print(f"   - {line}")
+    print("\n  Findings")
+    for f in result["findings"]:
+        print(f"   [{SEV_TAG[f['severity']]}] {f['ts'][11:19]} {f['rule_id']} {f['technique']:<10} {f['title']}")
+    print()
+
+
+def cmd_case_new(a: argparse.Namespace) -> int:
+    case = Case.create(a.cases, a.case_id, title=a.title, examiner=a.examiner)
+    print(f"Created case {case.id} at {case.dir}")
+    return 0
+
+
+def cmd_ingest(a: argparse.Namespace) -> int:
+    case = Case.open(a.cases, a.case_id)
+    for f in a.files:
+        entry = case.ingest(Path(f), examiner=a.examiner, note=a.note)
+        print(f"  + {entry['evidence']:<32} sha256={entry['sha256']}")
+    return 0
+
+
+def cmd_analyze(a: argparse.Namespace) -> int:
+    case = Case.open(a.cases, a.case_id)
+    result = workflow.analyze_case(case, examiner=a.examiner, year=a.year,
+                                   rules_path=Path(a.rules) if a.rules else None)
+    _print_summary(result)
+    print(f"  Report: {case.dir / 'report.html'}")
+    return 0
+
+
+def cmd_verify(a: argparse.Namespace) -> int:
+    v = Case.open(a.cases, a.case_id).verify()
+    print(f"Ledger entries: {v['entries']}   head: {v['head']}")
+    for ev in v["evidence"]:
+        print(f"  {'OK ' if ev['ok'] else 'BAD'} {ev['file']}")
+    if v["ok"]:
+        print("INTEGRITY VERIFIED")
+        return 0
+    print("INTEGRITY FAILURE:")
+    for p in v["problems"]:
+        print(f"  ! {p}")
+    return 2
+
+
+def cmd_anchor(a: argparse.Namespace) -> int:
+    print(json.dumps(Case.open(a.cases, a.case_id).anchor(), indent=2))
+    return 0
+
+
+def cmd_scan(a: argparse.Namespace) -> int:
+    """Quick triage of loose files without opening a case (no custody record)."""
+    events = parsers.parse_files([Path(f) for f in a.files], year=a.year)
+    result = analysis.analyze(events, detections.load_rules(Path(a.rules) if a.rules else None))
+    if a.json:
+        json.dump(result, sys.stdout, indent=2)
+    else:
+        _print_summary(result)
+    return 1 if result["stats"]["findings"] else 0
+
+
+def cmd_serve(a: argparse.Namespace) -> int:
+    from .server import serve
+    serve(Path(a.cases), host=a.host, port=a.port)
+    return 0
+
+
+def cmd_demo(a: argparse.Namespace) -> int:
+    """Build the bundled sample breach as a full case and analyse it."""
+    case_id = a.case_id
+    try:
+        case = Case.create(a.cases, case_id, title="Acme Labs - web server and finance workstation compromise",
+                           examiner=a.examiner or "demo-examiner")
+    except FileExistsError:
+        print(f"Case {case_id} already exists - re-running analysis.")
+        case = Case.open(a.cases, case_id)
+    else:
+        for f in sorted(SAMPLES.iterdir()):
+            entry = case.ingest(f, examiner=a.examiner or "demo-examiner", note="bundled sample")
+            print(f"  + {entry['evidence']:<32} sha256={entry['sha256'][:24]}...")
+    result = workflow.analyze_case(case, examiner=a.examiner or "demo-examiner", year=2026)
+    _print_summary(result)
+    print(f"  Report:    {case.dir / 'report.html'}")
+    print(f"  Dashboard: python -m tracevault serve --cases {a.cases}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="tracevault", description="Evidence-first DFIR triage.")
+    p.add_argument("--version", action="version", version=f"TraceVault {__version__}")
+    p.add_argument("--cases", default="cases", help="case workspace root (default: ./cases)")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    def add(name, fn, help_):
+        sp = sub.add_parser(name, help=help_)
+        sp.set_defaults(fn=fn)
+        return sp
+
+    sp = add("case-new", cmd_case_new, "open a new case")
+    sp.add_argument("case_id"); sp.add_argument("--title", default=""); sp.add_argument("--examiner")
+
+    sp = add("ingest", cmd_ingest, "acquire evidence files into a case (hashed + logged)")
+    sp.add_argument("case_id"); sp.add_argument("files", nargs="+")
+    sp.add_argument("--examiner"); sp.add_argument("--note", default="")
+
+    sp = add("analyze", cmd_analyze, "parse evidence, run detections, export report")
+    sp.add_argument("case_id"); sp.add_argument("--examiner"); sp.add_argument("--year", type=int)
+    sp.add_argument("--rules", help="custom rules JSON")
+
+    sp = add("verify", cmd_verify, "verify ledger chain and evidence hashes")
+    sp.add_argument("case_id")
+
+    sp = add("anchor", cmd_anchor, "print the ledger head hash for external timestamping")
+    sp.add_argument("case_id")
+
+    sp = add("scan", cmd_scan, "triage loose log files without a case")
+    sp.add_argument("files", nargs="+"); sp.add_argument("--year", type=int)
+    sp.add_argument("--rules"); sp.add_argument("--json", action="store_true")
+
+    sp = add("serve", cmd_serve, "start the local dashboard")
+    sp.add_argument("--host", default="127.0.0.1"); sp.add_argument("--port", type=int, default=8765)
+
+    sp = add("demo", cmd_demo, "create and analyse the bundled sample breach")
+    sp.add_argument("--case-id", default="CASE-001"); sp.add_argument("--examiner")
+
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.fn(args)
+    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
