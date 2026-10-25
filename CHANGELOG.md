@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 - 2026-10-25
 
 - **Risk score counts behaviours, not alerts.** Each detection rule counts once; further findings
   of the same rule add at most 50% of its weight; distinct behaviours combine as independent
