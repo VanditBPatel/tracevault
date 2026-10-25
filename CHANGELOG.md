@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-25
 
 - **Linux evidence collector** (`collect-tracevault.sh`, bash, nothing to install): copies
   `/var/log` auth, syslog/messages, auditd, web access logs and wtmp/btmp byte-for-byte,

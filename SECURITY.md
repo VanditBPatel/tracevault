@@ -25,8 +25,8 @@ Only the latest release receives security fixes.
 
 | Version | Supported |
 |---|---|
-| 0.4.x | yes |
-| < 0.4 | no |
+| 0.5.x | yes |
+| < 0.5 | no |
 
 ## What counts as a vulnerability
 

@@ -25,7 +25,7 @@ set -u
 set -o pipefail
 umask 077
 
-COLLECTOR_VERSION='0.4.2'
+COLLECTOR_VERSION='0.5.0'
 SINCE='72 hours ago'
 UNTIL='now'
 OUT=''
