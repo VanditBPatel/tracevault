@@ -15,7 +15,7 @@ import csv
 import ipaddress
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import unquote_plus
@@ -94,6 +94,7 @@ WIN_EVENT_KINDS = {
     4624: "auth.success",
     4625: "auth.failure",
     4688: "process.create",
+    4697: "service.install",
     4698: "task.create",
     4720: "account.create",
     4732: "group.add",
@@ -101,51 +102,164 @@ WIN_EVENT_KINDS = {
     1102: "log.cleared",
 }
 
+SYSMON_KINDS = {
+    1: "process.create",
+    3: "network.connect",
+    7: "image.load",
+    8: "thread.remote",
+    10: "process.access",
+    11: "file.create",
+    12: "registry.event",
+    13: "registry.event",
+    14: "registry.event",
+    22: "dns.query",
+}
+
+# Windows / Sysmon field name -> normalized field name. Process fields from Security 4688 and
+# Sysmon 1 land on the same names so one rule covers both sources.
+WIN_FIELDS = (
+    ("SubjectUserName", "actor"), ("LogonType", "logon_type"),
+    ("NewProcessName", "process"), ("Image", "process"),
+    ("ParentProcessName", "parent_process"), ("ParentImage", "parent_process"),
+    ("CommandLine", "command_line"), ("ParentCommandLine", "parent_command_line"),
+    ("ServiceName", "service_name"), ("ImagePath", "image_path"), ("ServiceFileName", "image_path"),
+    ("TaskName", "task_name"),
+    ("SourceImage", "source_image"), ("TargetImage", "target_image"),
+    ("GrantedAccess", "granted_access"), ("CallTrace", "call_trace"),
+    ("TargetFilename", "target_filename"), ("TargetObject", "target_object"),
+    ("Details", "details"), ("EventType", "registry_op"),
+    ("DestinationIp", "dest_ip"), ("DestinationPort", "dest_port"),
+    ("DestinationHostname", "dest_host"), ("QueryName", "query_name"),
+    ("ImageLoaded", "image_loaded"),
+)
+
 _MS_DATE_RE = re.compile(r"/Date\((-?\d+)\)/")  # ConvertTo-Json renders DateTime as /Date(ms)/
 
 
+def _val(rec: dict, key: str) -> Any:
+    v = rec.get(key)
+    return None if v in (None, "", "-") else v
+
+
+def _is_sysmon(rec: dict) -> bool:
+    return "sysmon" in str(rec.get("Channel") or rec.get("SourceName") or "").lower()
+
+
+def _local_time(rec: dict) -> str | None:
+    """The event's own (possibly local-time) stamp: TimeCreated (Get-WinEvent, Winlogbeat)
+    or EventTime (NXLog)."""
+    value = rec.get("TimeCreated") or rec.get("EventTime")
+    return str(value) if value else None
+
+
+def _win_time(rec: dict, offset: float | None) -> datetime:
+    """Best available UTC time: Sysmon's UtcTime; else the event's own stamp, corrected by the
+    file's measured clock offset when it is a bare local time; else the collector's
+    @timestamp (when the event was *received*, so slightly late)."""
+    if rec.get("UtcTime"):
+        return _iso(str(rec["UtcTime"]))
+    local = _local_time(rec)
+    if local:
+        ms = _MS_DATE_RE.search(local)
+        if ms:
+            return datetime.fromtimestamp(int(ms[1]) / 1000, tz=timezone.utc)
+        if local.endswith("Z") or re.search(r"[+-]\d{2}:?\d{2}$", local):
+            return _iso(local)
+        if offset is not None:
+            return _iso(local) + timedelta(seconds=offset)
+    if rec.get("@timestamp"):
+        return _iso(str(rec["@timestamp"]))
+    return _iso(local) if local else datetime.fromtimestamp(0, tz=timezone.utc)
+
+
+def _clock_offset(records: list[dict]) -> float | None:
+    """Seconds to add to bare local stamps, learned from Sysmon events that carry both a local
+    stamp and UtcTime (median, rounded to the nearest 15 minutes, as time zones are)."""
+    diffs = []
+    for rec in records:
+        local = _local_time(rec)
+        if rec.get("UtcTime") and local and not _MS_DATE_RE.search(local):
+            try:
+                diffs.append((_iso(str(rec["UtcTime"])) - _iso(local)).total_seconds())
+            except ValueError:
+                continue
+    if not diffs:
+        return None
+    diffs.sort()
+    return round(diffs[len(diffs) // 2] / 900) * 900
+
+
 def parse_winevt(path: Path) -> list[Event]:
-    """Parse Windows events exported as JSON (e.g. Get-WinEvent ... | ConvertTo-Json)."""
+    """Parse Windows Security/System and Sysmon events exported as JSON (Get-WinEvent |
+    ConvertTo-Json, Winlogbeat-style flattened JSON as in the OTRF Security-Datasets)."""
+    records = _json_records(path) or []
+    offset = _clock_offset(records)
     events: list[Event] = []
-    for rec in _json_records(path) or []:
+    for rec in records:
         event_id = int(rec.get("EventID", rec.get("Id", 0)))
-        kind = WIN_EVENT_KINDS.get(event_id, f"win.{event_id}")
-        created = str(rec["TimeCreated"])
-        ms = _MS_DATE_RE.search(created)
-        ts = datetime.fromtimestamp(int(ms[1]) / 1000, tz=timezone.utc) if ms else _iso(created)
+        sysmon = _is_sysmon(rec)
+        kind = (SYSMON_KINDS.get(event_id, f"sysmon.{event_id}") if sysmon
+                else WIN_EVENT_KINDS.get(event_id, f"win.{event_id}"))
+        ts = _win_time(rec, offset)
 
-        user = rec.get("TargetUserName")
-        fields: dict = {"event_id": event_id}
-        for src, dst in (("SubjectUserName", "actor"), ("LogonType", "logon_type"),
-                         ("NewProcessName", "process"), ("ParentProcessName", "parent_process"),
-                         ("CommandLine", "command_line"), ("ServiceName", "service_name"),
-                         ("ImagePath", "image_path"), ("TaskName", "task_name")):
-            if rec.get(src) not in (None, "", "-"):
+        fields: dict = {"event_id": event_id, "channel": rec.get("Channel")}
+        for src, dst in WIN_FIELDS:
+            if _val(rec, src) is not None and dst not in fields:
                 fields[dst] = rec[src]
-        if event_id == 4732:  # TargetUserName is the group, MemberName is who was added
-            fields["group"] = rec.get("TargetUserName")
-            user = rec.get("MemberName")
-        if event_id == 4688 and not user:
-            user = rec.get("SubjectUserName")
 
-        src_ip = rec.get("IpAddress")
-        if src_ip in ("-", "", "::1", "127.0.0.1"):
+        if sysmon:
+            user = _val(rec, "User")
+        elif event_id == 4732:  # TargetUserName is the group, MemberName is who was added
+            fields["group"] = rec.get("TargetUserName")
+            user = _val(rec, "MemberName") or _val(rec, "MemberSid")
+        elif event_id == 4688:
+            user = _val(rec, "SubjectUserName") or _val(rec, "TargetUserName")
+        else:
+            user = _val(rec, "TargetUserName")
+
+        src_ip = _val(rec, "IpAddress")
+        if src_ip in ("::1", "127.0.0.1"):
             src_ip = None
 
-        events.append(Event(ts=ts, source=path.name, kind=kind, host=rec.get("Computer", "unknown"),
-                            message=rec.get("Message") or _win_message(event_id, user, fields),
+        host = rec.get("Computer") or rec.get("Hostname")
+        if not host and isinstance(rec.get("host"), dict):
+            host = rec["host"].get("name")
+        events.append(Event(ts=ts, source=path.name, kind=kind, host=host or "unknown",
+                            message=_win_message(event_id, kind, user, fields, rec),
                             raw=json.dumps(rec), user=user, src_ip=src_ip, fields=fields))
     return events
 
 
-def _win_message(event_id: int, user: str | None, fields: dict) -> str:
-    if event_id == 4688:
+def _basename(p: Any) -> str:
+    return str(p or "?").replace("/", "\\").rsplit("\\", 1)[-1]
+
+
+def _win_message(event_id: int, kind: str, user: str | None, fields: dict, rec: dict) -> str:
+    if kind == "process.create":
         return f"Process created: {fields.get('command_line') or fields.get('process')}"
-    if event_id == 7045:
+    if kind == "process.access":
+        return (f"{_basename(fields.get('source_image'))} opened {_basename(fields.get('target_image'))} "
+                f"(access {fields.get('granted_access')})")
+    if kind == "file.create":
+        return f"{_basename(fields.get('process'))} wrote {fields.get('target_filename')}"
+    if kind == "registry.event":
+        details = f" = {fields['details']}" if fields.get("details") else ""
+        return f"{fields.get('registry_op') or 'Registry'} {fields.get('target_object')}{details}"
+    if kind == "network.connect":
+        return f"{_basename(fields.get('process'))} -> {fields.get('dest_ip')}:{fields.get('dest_port')}"
+    if kind == "thread.remote":
+        return f"{_basename(fields.get('source_image'))} created a thread in {_basename(fields.get('target_image'))}"
+    if kind == "image.load":
+        return f"{_basename(fields.get('process'))} loaded {fields.get('image_loaded')}"
+    if kind == "dns.query":
+        return f"{_basename(fields.get('process'))} resolved {fields.get('query_name')}"
+    if kind == "service.install":
         return f"Service installed: {fields.get('service_name')} -> {fields.get('image_path')}"
     if event_id == 4732:
         return f"{user} added to group {fields.get('group')}"
-    label = WIN_EVENT_KINDS.get(event_id, f"Event {event_id}")
+    if rec.get("Message"):
+        return str(rec["Message"]).splitlines()[0][:300]
+    label = WIN_EVENT_KINDS.get(event_id, kind)
     return f"{label} ({event_id}) user={user or '-'}"
 
 
@@ -368,7 +482,7 @@ def _classify_json(rec: dict) -> str | None:
         return "okta"
     if "AuditData" in rec or ("Operation" in rec and "CreationTime" in rec):
         return "m365"
-    if "TimeCreated" in rec and ("EventID" in rec or "Id" in rec):
+    if any(k in rec for k in ("TimeCreated", "UtcTime", "EventTime")) and ("EventID" in rec or "Id" in rec):
         return "winevt"
     return None
 
@@ -407,7 +521,29 @@ def parse_files(paths: Iterable[Path], year: int | None = None) -> list[Event]:
     events.sort(key=lambda e: (e.ts, e.source))
     for i, e in enumerate(events, start=1):
         e.id = f"E{i:05d}"
+    mark_duplicates(events)
     return events
+
+
+def mark_duplicates(events: list[Event], window: float = 2.0) -> int:
+    """Windows logs one process start twice when both Security 4688 and Sysmon 1 are on.
+    Mark the Security copy as a duplicate of the (richer) Sysmon copy so detections count the
+    process once. Both stay in the timeline; nothing is deleted from the evidence."""
+    sysmon: dict[tuple, list[Event]] = {}
+    for e in events:
+        if e.kind == "process.create" and e.fields.get("event_id") == 1 and e.get("command_line"):
+            key = (e.host.split(".")[0].lower(), str(e.get("command_line")).strip().lower())
+            sysmon.setdefault(key, []).append(e)
+    marked = 0
+    for e in events:
+        if e.kind == "process.create" and e.fields.get("event_id") == 4688 and e.get("command_line"):
+            key = (e.host.split(".")[0].lower(), str(e.get("command_line")).strip().lower())
+            twin = next((s for s in sysmon.get(key, [])
+                         if abs((s.ts - e.ts).total_seconds()) <= window), None)
+            if twin:
+                e.fields["duplicate_of"] = twin.id
+                marked += 1
+    return marked
 
 
 # --------------------------------------------------------------------------- helpers

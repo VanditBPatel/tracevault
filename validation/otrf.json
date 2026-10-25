@@ -1,0 +1,188 @@
+{
+  "source": "OTRF Security-Datasets (https://github.com/OTRF/Security-Datasets)",
+  "base_url": "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/",
+  "known_artifacts": {
+    "TV-024": "Every OTRF recording starts by clearing the Security log, so the log-cleared rule fires on each dataset. This is a property of how the data was captured, not of the simulated attack."
+  },
+  "datasets": [
+    {
+      "name": "lsass_dump_comsvcs",
+      "path": "credential_access/host/psh_lsass_memory_dump_comsvcs.zip",
+      "technique": "T1003.001",
+      "expect": [
+        "TV-021",
+        "TV-030",
+        "TV-031"
+      ],
+      "also_ok": {},
+      "sha256": "0af9e920220d746432f0972be83ad057629695540aecd68c15869d190786e1ae"
+    },
+    {
+      "name": "lsass_dump_dumpert",
+      "path": "credential_access/host/cmd_lsass_memory_dumpert_syscalls.zip",
+      "technique": "T1003.001",
+      "expect": [
+        "TV-030"
+      ],
+      "also_ok": {},
+      "sha256": "a28dbf708685a80edfb0b3d2a00c9bf196dd394fc1d61a933878841f4872a7ed"
+    },
+    {
+      "name": "mimikatz_logonpasswords",
+      "path": "credential_access/host/empire_mimikatz_logonpasswords.zip",
+      "technique": "T1003.001",
+      "expect": [
+        "TV-030"
+      ],
+      "also_ok": {},
+      "sha256": "bb4c057b62d781be5426e011872ba1a15070c07afbb24848a14458f4b22b06fb"
+    },
+    {
+      "name": "lsass_dump_taskmanager",
+      "path": "credential_access/host/rdp_interactive_taskmanager_lsass_dump.zip",
+      "technique": "T1003.001",
+      "expect": [
+        "TV-030",
+        "TV-031"
+      ],
+      "also_ok": {},
+      "sha256": "a7761e64c891162e949afebf367084a6dddd2f3dac7b91bce870fcf9f6206fba"
+    },
+    {
+      "name": "sam_copy_esentutl",
+      "path": "credential_access/host/cmd_sam_copy_esentutl.zip",
+      "technique": "T1003.002",
+      "expect": [
+        "TV-032"
+      ],
+      "also_ok": {},
+      "sha256": "f7a71135778aeff605abcb88a14a076f0814ab5cb136d07103bdf13c45551b64"
+    },
+    {
+      "name": "sam_reg_save",
+      "path": "credential_access/host/empire_shell_reg_dump_sam.zip",
+      "technique": "T1003.002",
+      "expect": [
+        "TV-032"
+      ],
+      "also_ok": {},
+      "sha256": "5a8ee19860f35da6d4bcadf15178a085b469086c461d3d873d0f4adedba41f0a"
+    },
+    {
+      "name": "ntds_ntdsutil",
+      "path": "credential_access/host/cmd_dumping_ntds_dit_file_ntdsutil.zip",
+      "technique": "T1003.003",
+      "expect": [
+        "TV-033"
+      ],
+      "also_ok": {},
+      "sha256": "4633882ab1e9eadd156b29a89a5a6e24b680ead1b11ee259fdbe0d19ddbf77cf"
+    },
+    {
+      "name": "empire_launcher_vbs",
+      "path": "execution/host/empire_launcher_vbs.zip",
+      "technique": "T1059.001",
+      "expect": [
+        "TV-020"
+      ],
+      "also_ok": {},
+      "sha256": "812da270cf8cda6f1948fb6275410f15dc1794d0bd6b623c9c25b2518285019c"
+    },
+    {
+      "name": "psexec_service",
+      "path": "lateral_movement/host/empire_psexec_dcerpc_tcp_svcctl.zip",
+      "technique": "T1569.002",
+      "expect": [
+        "TV-022"
+      ],
+      "also_ok": {
+        "TV-020": "Reviewed: the PsExec-style service runs Empire's 'powershell -noP -sta -w 1 -enc' stager - genuine attacker execution."
+      },
+      "sha256": "8f40e7fc86bbbf31ebd50b3ba537cf0f4378392ae3e74de84bee00aeb0de1fa5"
+    },
+    {
+      "name": "run_key_persistence",
+      "path": "persistence/host/empire_persistence_registry_modification_run_keys_elevated_user.zip",
+      "technique": "T1547.001",
+      "expect": [
+        "TV-034"
+      ],
+      "also_ok": {},
+      "sha256": "2809354d679025859d723be3ceb1e2c9f9e5dde2ebec5bbea7c398e165a9b67d"
+    },
+    {
+      "name": "schtasks_create",
+      "path": "persistence/host/empire_schtasks_creation_standard_user.zip",
+      "technique": "T1053.005",
+      "expect": [
+        "TV-037"
+      ],
+      "also_ok": {
+        "TV-025": "Reviewed: Security 4698 records the scheduled task the attack created."
+      },
+      "sha256": "b073a18420c90394cd2b6ad7589c78d90eba32dc155ed04b12ac824a8fc591b4"
+    },
+    {
+      "name": "uac_bypass_fodhelper",
+      "path": "privilege_escalation/host/empire_uac_shellapi_fodhelper.zip",
+      "technique": "T1548.002",
+      "expect": [
+        "TV-035"
+      ],
+      "also_ok": {
+        "TV-020": "Reviewed: the UAC-bypass payload is encoded PowerShell spawned by fodhelper.exe - genuine attacker execution."
+      },
+      "sha256": "b8cc7aae826f5e4aea3ea47b2b6db69b062c39201de8de9621d5081622d3c504"
+    },
+    {
+      "name": "bitsadmin_download",
+      "path": "defense_evasion/host/cmd_bitsadmin_download_psh_script.zip",
+      "technique": "T1197",
+      "expect": [
+        "TV-036"
+      ],
+      "also_ok": {},
+      "sha256": "8fb7bc9f3d82f672dc39a55e50006137aa540c4a9860acdcc5d08a4fd609b594"
+    },
+    {
+      "name": "mshta_vbscript",
+      "path": "defense_evasion/host/cmd_mshta_vbscript_execute_psh.zip",
+      "technique": "T1218.005",
+      "expect": [
+        "TV-036"
+      ],
+      "also_ok": {},
+      "sha256": "f5f700bc986bbe73edcc209754b28a3e0ad38c56877f7fc5ed6fd04bc036d9f4"
+    },
+    {
+      "name": "eventlog_service_disabled",
+      "path": "defense_evasion/host/psh_disable_eventlog_service_startuptype_modification.zip",
+      "technique": "T1562.002",
+      "expect": [
+        "TV-038"
+      ],
+      "also_ok": {},
+      "sha256": "aaf99c001735e37dcf64206d369114087f0bd239f9d5c477a44f6d0d4cbce85a"
+    },
+    {
+      "name": "wmic_add_user",
+      "path": "defense_evasion/host/empire_wmic_add_user_backdoor.zip",
+      "technique": "T1136.001",
+      "expect": [
+        "TV-011"
+      ],
+      "also_ok": {},
+      "sha256": "4b18e693ed39cc75c429bc6f4b02400eda7dd01f336303e3edaf3cc3262bbac4"
+    },
+    {
+      "name": "remote_thread_injection",
+      "path": "defense_evasion/host/purplesharp_pe_injection_createremotethread.zip",
+      "technique": "T1055",
+      "expect": [
+        "TV-039"
+      ],
+      "also_ok": {},
+      "sha256": "d1cfff7404448fd9ac7558967837a9903bb474957949218c293c09fd56a5ca7a"
+    }
+  ]
+}

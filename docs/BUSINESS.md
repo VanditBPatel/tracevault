@@ -114,7 +114,10 @@ insurers, and **MSP distribution**.
 ## 9. Key metrics
 
 - Time from evidence ingest to first verified finding (target: minutes, not days)
-- Detection precision on labelled incident datasets (false-positive rate on benign activity)
+- Detection rate and false positives on public attack datasets. The first measurement is
+  **82%** of techniques detected on held-out OTRF Security-Datasets recordings, with false
+  positives from Windows background services that were then tuned out
+  ([validation/RESULTS.md](../validation/RESULTS.md)). Grow the benchmark and publish each release's score.
 - Cases handed to professional responders without re-collection
 - MSP accounts, managed endpoints, monthly active cases
 - Net revenue retention and insurer-channel conversion

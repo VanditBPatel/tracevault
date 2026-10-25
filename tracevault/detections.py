@@ -12,7 +12,11 @@ touching code. Three rule types are supported:
                 `window` seconds apart (e.g. logins from two countries)
 
 Conditions (`where`) map a field name to either a case-insensitive regex string or a
-comparison object such as {"gt": 10000000} / {"lt": 400} / {"eq": 4625}.
+comparison object such as {"gt": 10000000} / {"lt": 400} / {"eq": 4625}. A match spec may
+also carry `any` (a list of condition blocks, at least one must hold) and `not` for tuning out
+known-benign activity: either conditions that must all be false, or a list of blocks where
+an event is excluded only if every condition in one block holds (e.g. "Microsoft task path AND
+created by the machine account").
 """
 
 from __future__ import annotations
@@ -54,12 +58,24 @@ def _value_ok(actual: Any, cond: Any) -> bool:
 
 
 def matches(event: Event, spec: dict[str, Any]) -> bool:
+    """`kind` and every `where` condition must hold; if `any` is given, at least one of its
+    `where`-style blocks must hold too; no condition in a `not` block may hold."""
     kind = spec.get("kind")
     if kind is not None:
         kinds = kind if isinstance(kind, list) else [kind]
         if event.kind not in kinds:
             return False
-    return all(_value_ok(event.get(name), cond) for name, cond in spec.get("where", {}).items())
+    if not all(_value_ok(event.get(name), cond) for name, cond in spec.get("where", {}).items()):
+        return False
+    def block_ok(block: dict) -> bool:
+        return all(_value_ok(event.get(n), c) for n, c in block.items())
+
+    if "any" in spec and not any(block_ok(b) for b in spec["any"]):
+        return False
+    exclusions = spec.get("not", {})
+    if isinstance(exclusions, list):  # list of blocks: excluded if every condition in any one block holds
+        return not any(block_ok(b) for b in exclusions)
+    return not any(_value_ok(event.get(name), cond) for name, cond in exclusions.items())
 
 
 def _bursts(events: list[Event], window: int) -> list[list[Event]]:
@@ -179,6 +195,7 @@ def run_rule(rule: dict, events: list[Event]) -> list[Finding]:
 
 def run(events: list[Event], rules: list[dict] | None = None) -> list[Finding]:
     rules = rules if rules is not None else load_rules()
+    events = [e for e in events if not e.fields.get("duplicate_of")]
     findings = [f for rule in rules for f in run_rule(rule, events)]
     findings.sort(key=lambda f: (f.ts, f.rule_id))
     return findings

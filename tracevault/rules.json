@@ -98,8 +98,13 @@
     "tactic": "Persistence",
     "technique": "T1543.003",
     "technique_name": "Create or Modify System Process: Windows Service",
-    "description": "A Windows service was installed; review the binary path for legitimacy.",
-    "match": {"kind": "service.install"}
+    "description": "A Windows service was installed; review the binary path for legitimacy. Windows' per-user service instances (svchost -k <group>, or <Name>_<hex id> running a System32 binary) and Defender definition-update drivers are excluded - note this also hides a malicious service registered into a svchost group.",
+    "match": {"kind": "service.install",
+              "not": [
+                {"image_path": "^\"?c:\\\\windows\\\\system32\\\\svchost\\.exe\"?\\s+-k\\s+\\w+"},
+                {"image_path": "\\\\ProgramData\\\\Microsoft\\\\Windows Defender\\\\Definition Updates\\\\"},
+                {"service_name": "_[0-9a-f]{4,8}$", "image_path": "^\"?c:\\\\windows\\\\system32\\\\[^\\\\]+\\.exe\"?$"}
+              ]}
   },
   {
     "id": "TV-023",
@@ -131,8 +136,131 @@
     "tactic": "Persistence",
     "technique": "T1053.005",
     "technique_name": "Scheduled Task/Job: Scheduled Task",
-    "description": "A scheduled task was registered.",
-    "match": {"kind": "task.create"}
+    "description": "A scheduled task was registered. Built-in \\Microsoft\\Windows\\ tasks registered by the machine account itself are excluded; the same path used by a person is still flagged.",
+    "match": {"kind": "task.create", "not": [{"task_name": "^\\\\Microsoft\\\\Windows\\\\", "actor": "\\$$"}]}
+  },
+  {
+    "id": "TV-030",
+    "title": "LSASS process memory accessed",
+    "type": "match",
+    "severity": "critical",
+    "tactic": "Credential Access",
+    "technique": "T1003.001",
+    "technique_name": "OS Credential Dumping: LSASS Memory",
+    "description": "A process opened LSASS with memory-read rights typical of credential dumpers, or through a dump library (Sysmon 10).",
+    "match": {
+      "kind": "process.access",
+      "where": {"target_image": "\\\\lsass\\.exe$"},
+      "any": [{"granted_access": "^0x(1fffff|1f3fff|1f1fff|1010|1410|1438|143a)$"}, {"call_trace": "dbghelp|dbgcore|UNKNOWN\\("}],
+      "not": {"source_image": "\\\\(MsMpEng|wininit|csrss|services)\\.exe$|\\\\WindowsAzure\\\\GuestAgent[^\\\\]*\\\\CollectGuestLogs\\.exe$"}
+    }
+  },
+  {
+    "id": "TV-031",
+    "title": "LSASS dump file written",
+    "type": "match",
+    "severity": "critical",
+    "tactic": "Credential Access",
+    "technique": "T1003.001",
+    "technique_name": "OS Credential Dumping: LSASS Memory",
+    "description": "A file named like an LSASS memory dump was created (Sysmon 11).",
+    "match": {"kind": "file.create", "where": {"target_filename": "lsass[^\\\\]*\\.dmp$"}}
+  },
+  {
+    "id": "TV-032",
+    "title": "SAM / SECURITY registry hive copied",
+    "type": "match",
+    "severity": "critical",
+    "tactic": "Credential Access",
+    "technique": "T1003.002",
+    "technique_name": "OS Credential Dumping: Security Account Manager",
+    "description": "The SAM or SECURITY hive (or any key under them, e.g. LSA secrets), or the whole SYSTEM hive, was saved or copied - together they yield local password hashes. Exporting ordinary SYSTEM subkeys is not flagged.",
+    "match": {"kind": "process.create", "where": {"command_line": "reg(\\.exe)?\"?\\s+(save|export)\\s+\"?(hklm|hkey_local_machine)[\\\\/]((sam|security)\\b|system(\"|\\s|$))|esentutl.*[\\\\/]config[\\\\/]sam\\b|(copy|xcopy|robocopy).*[\\\\/]config[\\\\/](sam|security)\\b"}}
+  },
+  {
+    "id": "TV-033",
+    "title": "Active Directory database (NTDS.dit) extracted",
+    "type": "match",
+    "severity": "critical",
+    "tactic": "Credential Access",
+    "technique": "T1003.003",
+    "technique_name": "OS Credential Dumping: NTDS",
+    "description": "NTDS.dit was exported or copied - it holds every domain password hash.",
+    "match": {"kind": "process.create", "where": {"command_line": "ntdsutil.*(\\bifm\\b|create full)|esentutl.*ntds\\.dit|(copy|xcopy|robocopy).*ntds\\.dit"}}
+  },
+  {
+    "id": "TV-034",
+    "title": "Registry Run key persistence",
+    "type": "match",
+    "severity": "high",
+    "tactic": "Persistence",
+    "technique": "T1547.001",
+    "technique_name": "Boot or Logon Autostart Execution: Registry Run Keys",
+    "description": "A value was set under a Run/RunOnce key so a program starts at logon (Sysmon 13).",
+    "match": {"kind": "registry.event", "where": {"target_object": "\\\\Software\\\\(Wow6432Node\\\\)?Microsoft\\\\Windows\\\\CurrentVersion\\\\Run(Once)?\\\\", "event_id": {"eq": 13}},
+              "not": [{"process": "\\\\ProgramData\\\\Microsoft\\\\Windows Defender\\\\platform\\\\[^\\\\]+\\\\MsMpEng\\.exe$", "target_object": "\\\\Run\\\\(WindowsDefender|SecurityHealth)$"}]}
+  },
+  {
+    "id": "TV-035",
+    "title": "UAC bypass via shell open-command hijack",
+    "type": "match",
+    "severity": "critical",
+    "tactic": "Privilege Escalation",
+    "technique": "T1548.002",
+    "technique_name": "Abuse Elevation Control Mechanism: Bypass User Account Control",
+    "description": "A per-user shell\\open\\command handler used by auto-elevating binaries (fodhelper, eventvwr, sdclt) was hijacked.",
+    "match": {"kind": "registry.event", "where": {"target_object": "\\\\(ms-settings|mscfile|exefile|Folder)\\\\shell\\\\open\\\\command"}}
+  },
+  {
+    "id": "TV-036",
+    "title": "Windows utility used to download or proxy-execute code",
+    "type": "match",
+    "severity": "high",
+    "tactic": "Defense Evasion",
+    "technique": "T1218",
+    "technique_name": "System Binary Proxy Execution",
+    "description": "A signed Windows binary (bitsadmin, certutil, mshta, regsvr32, rundll32, cmstp) was used to fetch or run script code.",
+    "match": {"kind": "process.create", "where": {"command_line": "bitsadmin.*/(transfer|addfile)|certutil.*(urlcache|-decode)|mshta(\\.exe)?\"?\\s+\"?(https?:|javascript:|vbscript:|[^\"]*\\.hta\\b)|regsvr32.*/i:\\s*https?|rundll32.*javascript:|cmstp(\\.exe)?\"?\\s.*/(s|au|ni)\\b.*\\.inf\\b"}}
+  },
+  {
+    "id": "TV-037",
+    "title": "Scheduled task created from the command line",
+    "type": "match",
+    "severity": "medium",
+    "tactic": "Persistence",
+    "technique": "T1053.005",
+    "technique_name": "Scheduled Task/Job: Scheduled Task",
+    "description": "schtasks.exe /create was run.",
+    "match": {"kind": "process.create", "where": {"command_line": "schtasks(\\.exe)?\"?\\s.*/create"}}
+  },
+  {
+    "id": "TV-038",
+    "title": "Windows event logging disabled or tampered",
+    "type": "match",
+    "severity": "critical",
+    "tactic": "Defense Evasion",
+    "technique": "T1562.002",
+    "technique_name": "Impair Defenses: Disable Windows Event Logging",
+    "description": "The EventLog service was disabled, the MiniNt key that silences logging was created, or logs were cleared/redirected from the command line.",
+    "match": {
+      "kind": ["registry.event", "process.create"],
+      "any": [
+        {"target_object": "\\\\Services\\\\EventLog\\\\Start$", "details": "0x0000000(3|4)"},
+        {"target_object": "\\\\Control\\\\MiniNt"},
+        {"command_line": "wevtutil.*\\s(cl|clear-log|sl|set-log)\\s|auditpol.*/(clear|remove)|(set-service|sc(\\.exe)?\\s+config).*eventlog.*(disabled|start=\\s*disabled)|stop-service.*eventlog"}
+      ]
+    }
+  },
+  {
+    "id": "TV-039",
+    "title": "Remote thread created in another process",
+    "type": "match",
+    "severity": "high",
+    "tactic": "Defense Evasion",
+    "technique": "T1055",
+    "technique_name": "Process Injection",
+    "description": "A process started a thread inside another process (Sysmon 8), a common code-injection step. Windows' own dwm/csrss/wininit/services threads are excluded.",
+    "match": {"kind": "thread.remote", "not": {"source_image": "\\\\(csrss|wininit|services|MsMpEng|dwm|System)\\.exe$|^System$"}}
   },
   {
     "id": "TV-100",

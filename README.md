@@ -56,6 +56,7 @@ python -m tracevault anchor IR-2026-014
 | `verify` | Re-check the whole ledger chain and every evidence hash (exit code 2 on failure) |
 | `anchor` | Print the ledger head hash, to timestamp externally (notary, RFC 3161 TSA, blockchain) |
 | `scan` | Triage loose files without a case (`--json` for pipelines; exit 1 if anything fires) |
+| `validate` | Score the rules against public attack datasets (`--fetch` downloads them, hashes verified) |
 | `serve` | Local dashboard on 127.0.0.1 |
 
 All commands accept `--cases <dir>` (default `./cases`).
@@ -66,12 +67,16 @@ All commands accept `--cases <dir>` (default `./cases`).
 |---|---|---|
 | Linux syslog / `auth.log` (classic or ISO timestamps) | copy `/var/log/auth.log`, `/var/log/secure` | content |
 | Apache / Nginx combined access log | name it `<host>_access.log` to tag the host | content |
-| Windows event log as JSON (array or JSON Lines) | `Get-WinEvent -LogName Security \| Select TimeCreated,Id,... \| ConvertTo-Json` | JSON keys |
+| Windows Security / System / **Sysmon** events as JSON (array or JSON Lines) | `Get-WinEvent ... \| ConvertTo-Json`, Winlogbeat or NXLog JSON exports | JSON keys |
 | AWS CloudTrail | S3 log objects (`{"Records": [...]}`), CloudTrail Lake / Athena JSON | JSON keys |
 | Microsoft 365 unified audit log | Purview → Audit → Export (CSV with `AuditData` column), or `Search-UnifiedAuditLog` AuditData JSON | CSV header / JSON keys |
 | Okta System Log | `GET /api/v1/logs` output (JSON array or JSON Lines) | JSON keys |
 
-Windows events understood: 4624, 4625, 4688, 4698, 4720, 4732, 7045, 1102.
+Windows events understood: Security 4624, 4625, 4688, 4697, 4698, 4720, 4732, 1102; System 7045;
+Sysmon 1 (process), 3 (network), 7 (image load), 8 (remote thread), 10 (process access),
+11 (file create), 12–14 (registry), 22 (DNS). Exports often store local time without a zone,
+so TraceVault learns each file's offset from Sysmon's `UtcTime` and corrects the other events.
+A process logged by both Security 4688 and Sysmon 1 is counted once.
 
 Cloud events are normalized into the same model as everything else: sign-ins become
 `auth.success` / `auth.failure` (so brute-force rules work across Okta, M365, AWS and SSH alike),
@@ -81,7 +86,9 @@ The "host" of a cloud event is its tenant: `aws:<account-id>`, `m365`, `okta`.
 ## Detection rules
 
 Rules live in [tracevault/rules.json](tracevault/rules.json) — readable by analysts and reviewable
-in a pull request. 29 rules ship today (14 host/web, 15 cloud/identity). Four rule types:
+in a pull request. 38 rules ship today: 25 for hosts, web servers and Windows endpoints (10 of
+them for Windows endpoint techniques seen through Sysmon / process auditing), and 13 for cloud and
+identity (one of them a posture rule). Four rule types:
 
 - `match` — one event meets the conditions (e.g. encoded PowerShell, CloudTrail stopped)
 - `threshold` — N events from one entity in a burst (e.g. password brute force); add
@@ -92,6 +99,10 @@ in a pull request. 29 rules ship today (14 host/web, 15 cloud/identity). Four ru
 
 Conditions are case-insensitive regexes or numeric comparisons (`{"gt": 10000000}`). Use your
 own rule pack with `--rules my-rules.json`.
+
+Match specs can also use `any` (at least one block must hold) and `not` (exclusions; a list
+of blocks excludes an event only when every condition in one block holds). That is how
+known-benign activity is tuned out narrowly.
 
 Add `"category": "posture"` to a rule for risky practice that isn't proof of compromise (e.g. AWS
 root use). Posture findings are listed separately and never feed the attack storyline, risk score,
@@ -115,6 +126,14 @@ When auto-linking is wrong or incomplete, put an identity map in the case folder
 The map's SHA-256 is written to the custody ledger with each analysis, so the linking used for a
 report is on record.
 
+## Measured accuracy
+
+The Windows rules are scored against public attack recordings from OTRF Security-Datasets
+with `python -m tracevault validate --fetch`. On 11 held-out datasets they had never been
+tuned on, the rules detected **82%** of expected techniques on the first run. They also raised
+false alarms from Windows background services and a cloud VM agent, which were then tuned out.
+Full method, per-dataset tables and limitations: [validation/RESULTS.md](validation/RESULTS.md).
+
 ## Tests
 
 ```bash
@@ -133,6 +152,8 @@ tracevault/
   rules.json      bundled ATT&CK-mapped rules
   analysis.py     risk score, kill chain, IOCs, narrative
   identities.py   cross-system identity linking and status
+  validate.py     accuracy scoring against public datasets
+validation/       dataset manifests (tuning + held-out) and RESULTS.md
   custody.py      case workspace + hash-chained custody ledger
   workflow.py     case-level operations used by CLI and server
   report.py       printable HTML report

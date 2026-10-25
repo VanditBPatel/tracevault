@@ -1,0 +1,129 @@
+{
+  "source": "OTRF Security-Datasets (https://github.com/OTRF/Security-Datasets) - originally HELD-OUT: expectations were written before the first run, and that untuned first run is the out-of-sample result recorded in validation/RESULTS.md. Rules were tuned on these datasets afterwards, so later runs here are in-sample.",
+  "base_url": "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/",
+  "known_artifacts": {
+    "TV-024": "Every OTRF recording starts by clearing the Security log, so the log-cleared rule fires on each dataset. This is a property of how the data was captured, not of the simulated attack."
+  },
+  "datasets": [
+    {
+      "name": "mimikatz_lsadump_patch",
+      "path": "credential_access/host/empire_mimikatz_lsadump_patch.zip",
+      "technique": "T1003.001",
+      "expect": [
+        "TV-030"
+      ],
+      "also_ok": {},
+      "sha256": "552d5c8a3a41b8aae3118a855781b7a23cb497ebdc4afaa2127b46240356c132"
+    },
+    {
+      "name": "psexec_lsa_secrets_dump",
+      "path": "credential_access/host/cmd_psexec_lsa_secrets_dump.zip",
+      "technique": "T1003.004",
+      "expect": [
+        "TV-032"
+      ],
+      "also_ok": {
+        "TV-022": "Reviewed: PSEXESVC service installed by PsExec, which the attack used to run reg save as SYSTEM."
+      },
+      "sha256": "c52e6145fefe37373a5274e2976ccf6d62e4d33e13c55dc1a2ce17f00506d1a6"
+    },
+    {
+      "name": "schtasks_elevated",
+      "path": "persistence/host/empire_schtasks_creation_execution_elevated_user.zip",
+      "technique": "T1053.005",
+      "expect": [
+        "TV-037"
+      ],
+      "also_ok": {
+        "TV-025": "Reviewed: Security 4698 for the attacker's \\MordorElevated task."
+      },
+      "sha256": "74662dc5c52f4ac2fc9dcb336bae7fb4e101217169c65adf5784b03015501d3b"
+    },
+    {
+      "name": "run_key_standard_user",
+      "path": "persistence/host/empire_persistence_registry_modification_run_keys_standard_user.zip",
+      "technique": "T1547.001",
+      "expect": [
+        "TV-034"
+      ],
+      "also_ok": {
+        "TV-020": "Reviewed: the Run-key payload reads an encoded Empire stager from the registry and runs powershell -enc."
+      },
+      "sha256": "2965f791bcaf5e6ccfc4059985e81fd7e67ec87f17855b6c383edd1b03a19c36"
+    },
+    {
+      "name": "mshta_javascript_sct",
+      "path": "defense_evasion/host/cmd_mshta_javascript_getobject_sct.zip",
+      "technique": "T1218.005",
+      "expect": [
+        "TV-036"
+      ],
+      "also_ok": {},
+      "sha256": "976a705690dcc296ba132b9cd594c004265911e9e40d402c879dd06eddbbc057"
+    },
+    {
+      "name": "mshta_local_hta",
+      "path": "defense_evasion/host/psh_mshta_html_application_execution.zip",
+      "technique": "T1218.005",
+      "expect": [
+        "TV-036"
+      ],
+      "also_ok": {},
+      "sha256": "f734cd8d2043da8f9f49d86bea7b5bf35a8c87445aa44975a107936a543ae840"
+    },
+    {
+      "name": "regsvr32_sct",
+      "path": "defense_evasion/host/empire_launcher_sct_regsvr32.zip",
+      "technique": "T1218.010",
+      "expect": [
+        "TV-036"
+      ],
+      "also_ok": {
+        "TV-020": "Reviewed: the regsvr32 scriptlet launches Empire's encoded PowerShell stager."
+      },
+      "sha256": "abeb5c52c75286386e5eb999d7423d738a624191f4a95fb62694b471a10b2dab"
+    },
+    {
+      "name": "eventlog_disabled_via_registry",
+      "path": "defense_evasion/host/reg_disable_eventlog_service_startuptype_modification_via_registry.zip",
+      "technique": "T1562.002",
+      "expect": [
+        "TV-038"
+      ],
+      "also_ok": {},
+      "sha256": "d79d5a13fbb1e7957d748955a1be5c68294e58d322b76e41393d6987fe769656"
+    },
+    {
+      "name": "minint_key",
+      "path": "defense_evasion/host/cmd_stop_event_logging_controlset_minint_key.zip",
+      "technique": "T1562.002",
+      "expect": [
+        "TV-038"
+      ],
+      "also_ok": {},
+      "sha256": "564715635a46a0eae5985e770e1ef01cf33aac170652aca3b8a388ea9eb27c23"
+    },
+    {
+      "name": "smbexec_service",
+      "path": "lateral_movement/host/empire_smbexec_dcerpc_smb_svcctl.zip",
+      "technique": "T1569.002",
+      "expect": [
+        "TV-022"
+      ],
+      "also_ok": {
+        "TV-020": "Reviewed: the SMBExec service command runs Empire's encoded PowerShell stager."
+      },
+      "sha256": "c0fc435c9ce0ecdc7cd57b4055977b949ac6b1cae9d7f4ce7aa0f0e5eae7d7f1"
+    },
+    {
+      "name": "uac_bypass_cmstp",
+      "path": "defense_evasion/host/psh_cmstp_execution_bypassuac.zip",
+      "technique": "T1218.003",
+      "expect": [
+        "TV-036"
+      ],
+      "also_ok": {},
+      "sha256": "a653c698e8f779261ba0b3ac92bd604d4abe3a510cda8ab1f5ccdd421d013d4c"
+    }
+  ]
+}

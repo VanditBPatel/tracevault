@@ -95,6 +95,26 @@ def cmd_scan(a: argparse.Namespace) -> int:
     return 1 if result["stats"]["findings"] else 0
 
 
+def cmd_validate(a: argparse.Namespace) -> int:
+    """Score the rules against public attack datasets listed in a manifest."""
+    from . import validate
+    manifest_path = Path(a.manifest) if a.manifest else validate.DEFAULT_MANIFEST
+    data_dir = Path(a.data) if a.data else validate.DEFAULT_DATA
+    manifest = validate.load_manifest(manifest_path)
+    if a.fetch:
+        for line in validate.fetch(manifest, data_dir, pin=a.pin):
+            print(f"  {line}")
+        if a.pin:
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            print(f"  pinned SHA-256 hashes in {manifest_path}")
+    score = validate.run(manifest, data_dir, detections.load_rules(Path(a.rules) if a.rules else None))
+    print(validate.render_markdown(score))
+    if a.json_out:
+        Path(a.json_out).write_text(json.dumps(score, indent=2), encoding="utf-8")
+    s = score["summary"]
+    return 0 if s["detected"] == s["expected_detections"] and not s["unexplained_rule_hits"] else 1
+
+
 def cmd_serve(a: argparse.Namespace) -> int:
     from .server import serve
     serve(Path(a.cases), host=a.host, port=a.port)
@@ -154,6 +174,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("files", nargs="+"); sp.add_argument("--year", type=int)
     sp.add_argument("--rules"); sp.add_argument("--json", action="store_true")
     sp.add_argument("--identities", help="identity map JSON {identity: [aliases]}")
+
+    sp = add("validate", cmd_validate, "score detection rules against public attack datasets")
+    sp.add_argument("--manifest"); sp.add_argument("--data"); sp.add_argument("--rules")
+    sp.add_argument("--fetch", action="store_true", help="download datasets missing from --data")
+    sp.add_argument("--pin", action="store_true", help="record downloaded SHA-256 hashes in the manifest")
+    sp.add_argument("--json-out", help="write the full scorecard as JSON")
 
     sp = add("serve", cmd_serve, "start the local dashboard")
     sp.add_argument("--host", default="127.0.0.1"); sp.add_argument("--port", type=int, default=8765)

@@ -190,6 +190,139 @@ class CloudDetectionTests(unittest.TestCase):
         self.assertEqual(detections.run_rule(rule, events), [])
 
 
+SYSMON_FIXTURE = [
+    # Winlogbeat-style flattened records (OTRF format): Sysmon carries UtcTime, Security has
+    # only a local TimeCreated 4 hours behind UTC.
+    {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Hostname": "WS1",
+     "TimeCreated": "2020-10-18 19:50:05.910", "UtcTime": "2020-10-18 23:50:05.910",
+     "Image": "C:\\Windows\\System32\\rundll32.exe", "User": "CORP\\alice",
+     "CommandLine": "rundll32.exe C:\\windows\\System32\\comsvcs.dll MiniDump 756 C:\\Temp\\lsass.dmp full",
+     "ParentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"},
+    {"EventID": 4688, "Channel": "Security", "Hostname": "WS1", "TimeCreated": "2020-10-18 19:50:05.911",
+     "SubjectUserName": "alice", "TargetUserName": "-", "NewProcessName": "C:\\Windows\\System32\\rundll32.exe",
+     "CommandLine": "rundll32.exe C:\\windows\\System32\\comsvcs.dll MiniDump 756 C:\\Temp\\lsass.dmp full"},
+    {"EventID": 10, "Channel": "Microsoft-Windows-Sysmon/Operational", "Hostname": "WS1",
+     "TimeCreated": "2020-10-18 19:50:06.000", "UtcTime": "2020-10-18 23:50:06.000",
+     "SourceImage": "C:\\Windows\\System32\\rundll32.exe", "TargetImage": "C:\\windows\\system32\\lsass.exe",
+     "GrantedAccess": "0x1fffff", "CallTrace": "C:\\windows\\SYSTEM32\\dbgcore.DLL+9447"},
+    {"EventID": 10, "Channel": "Microsoft-Windows-Sysmon/Operational", "Hostname": "WS1",
+     "TimeCreated": "2020-10-18 19:50:07.000", "UtcTime": "2020-10-18 23:50:07.000",
+     "SourceImage": "C:\\Windows\\System32\\wininit.exe", "TargetImage": "C:\\windows\\system32\\lsass.exe",
+     "GrantedAccess": "0x1fffff"},
+]
+
+
+class SysmonTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "ws1.json"
+        self.path.write_text("\n".join(json.dumps(r) for r in SYSMON_FIXTURE))
+        self.events = parsers.parse_files([self.path])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_sysmon_kinds_and_fields(self):
+        self.assertEqual(parsers.detect_format(self.path), "winevt")
+        kinds = sorted(e.kind for e in self.events)
+        self.assertEqual(kinds, ["process.access", "process.access", "process.create", "process.create"])
+        access = next(e for e in self.events if e.kind == "process.access")
+        self.assertEqual(access.get("granted_access"), "0x1fffff")
+        self.assertIn("lsass.exe", access.message)
+
+    def test_local_time_corrected_with_learned_offset(self):
+        sec = next(e for e in self.events if e.get("event_id") == 4688)
+        self.assertEqual(sec.ts.isoformat(), "2020-10-18T23:50:05.911000+00:00")
+
+    def test_security_and_sysmon_duplicates_counted_once(self):
+        sec = next(e for e in self.events if e.get("event_id") == 4688)
+        sysmon = next(e for e in self.events if e.get("event_id") == 1)
+        self.assertEqual(sec.fields["duplicate_of"], sysmon.id)
+        hits = [f for f in detections.run(self.events) if f.rule_id == "TV-021"]
+        self.assertEqual(len(hits), 1)
+
+    def test_lsass_access_rule_respects_exclusions(self):
+        hits = [f for f in detections.run(self.events) if f.rule_id == "TV-030"]
+        self.assertEqual([f.events[0].get("source_image").rsplit("\\", 1)[-1] for f in hits], ["rundll32.exe"])
+
+    def test_nxlog_eventtime_format(self):
+        rec = {"EventID": 4720, "Channel": "Security", "Hostname": "WS2.corp.local", "host": "collector",
+               "EventTime": "2020-09-14 08:05:44", "@timestamp": "2020-09-14T12:05:46.456Z",
+               "TargetUserName": "backdoor"}
+        p = Path(self.tmp.name) / "nx.json"
+        p.write_text(json.dumps(rec))
+        (e,) = parsers.parse_file(p)
+        self.assertEqual((e.kind, e.host, e.user), ("account.create", "WS2.corp.local", "backdoor"))
+        self.assertEqual(e.ts.isoformat(), "2020-09-14T12:05:46.456000+00:00")  # no offset known -> @timestamp
+
+
+class RuleEngineTests(unittest.TestCase):
+    def _event(self, **fields):
+        from tracevault.models import Event
+        from datetime import datetime, timezone
+        return Event(ts=datetime(2026, 1, 1, tzinfo=timezone.utc), source="t", kind="task.create",
+                     host="h", message="m", raw="", fields=fields)
+
+    def test_not_blocks_require_every_condition(self):
+        spec = {"kind": "task.create", "not": [{"task_name": "^\\\\Microsoft\\\\Windows\\\\", "actor": "\\$$"}]}
+        builtin = self._event(task_name="\\Microsoft\\Windows\\Update", actor="WS1$")
+        hidden = self._event(task_name="\\Microsoft\\Windows\\Update", actor="mallory")
+        self.assertFalse(detections.matches(builtin, spec))
+        self.assertTrue(detections.matches(hidden, spec))  # attacker hiding under the Microsoft path
+
+    def test_any_blocks(self):
+        spec = {"kind": "task.create", "any": [{"a": "x"}, {"b": "y"}]}
+        self.assertTrue(detections.matches(self._event(b="y"), spec))
+        self.assertFalse(detections.matches(self._event(c="z"), spec))
+
+
+class ValidationHarnessTests(unittest.TestCase):
+    def test_scorecard_classifies_hits(self):
+        from tracevault import validate
+        with tempfile.TemporaryDirectory() as d:
+            data = Path(d)
+            (data / "ds1").mkdir()
+            (data / "ds1" / "x.json").write_text("\n".join(json.dumps(r) for r in SYSMON_FIXTURE))
+            manifest = {"known_artifacts": {}, "datasets": [
+                {"name": "ds1", "technique": "T1003.001", "expect": ["TV-030", "TV-032"],
+                 "also_ok": {"TV-021": "reviewed"}},
+                {"name": "absent", "expect": ["TV-001"]}]}
+            score = validate.run(manifest, data)
+            manifest["datasets"][0]["also_ok"] = {}
+            unreviewed = validate.run(manifest, data)
+        row = score["datasets"][0]
+        self.assertEqual(row["hits"], ["TV-030"])
+        self.assertEqual(row["misses"], ["TV-032"])
+        self.assertEqual(row["also_ok"], ["TV-021"])
+        self.assertEqual(row["unexplained"], {})
+        self.assertEqual(score["summary"]["missing"], 1)
+        self.assertEqual(score["summary"]["detection_rate"], 0.5)
+        self.assertEqual(unreviewed["datasets"][0]["unexplained"], {"TV-021": 1})
+
+    def test_fetch_extracts_only_json_by_basename(self):
+        import io as _io
+        import zipfile as _zip
+        from unittest import mock
+        from tracevault import validate
+        buf = _io.BytesIO()
+        with _zip.ZipFile(buf, "w") as zf:
+            zf.writestr("../../evil.json", "{}")
+            zf.writestr("readme.txt", "x")
+        blob = buf.getvalue()
+
+        class Resp(_io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        manifest = {"base_url": "https://example.invalid/", "datasets": [{"name": "z", "path": "z.zip"}]}
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch("urllib.request.urlopen", return_value=Resp(blob)):
+            validate.fetch(manifest, Path(d) / "data", pin=True)
+            written = sorted(p.relative_to(d).as_posix() for p in Path(d).rglob("*") if p.is_file())
+        self.assertEqual(written, ["data/z/evil.json"])
+        self.assertEqual(len(manifest["datasets"][0]["sha256"]), 64)
+
+
 class IdentityTests(unittest.TestCase):
     def test_canonical_auto_linking(self):
         self.assertEqual(identities.canonical("Priya@Acme.io"), "priya")
