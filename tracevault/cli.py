@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, analysis, detections, parsers, workflow
+from . import __version__, analysis, detections, identities, parsers, workflow
 from .custody import Case
 
 SAMPLES = Path(__file__).resolve().parent.parent / "samples"
@@ -22,13 +22,22 @@ def _print_summary(result: dict) -> None:
     s, r = result["stats"], result["risk"]
     print(f"\n  Risk score  {r['score']}/100 ({r['level'].upper()})")
     print(f"  Events      {s['events']} analysed, {s['flagged_events']} flagged")
-    print(f"  Findings    {s['findings']}  " + "  ".join(f"{k}={v}" for k, v in s["by_severity"].items()))
+    print(f"  Findings    {s['findings']}  " + "  ".join(f"{k}={v}" for k, v in s["by_severity"].items())
+          + f"   (+{s['posture_findings']} posture)")
     print("\n  Storyline")
     for line in result["narrative"]:
         print(f"   - {line}")
-    print("\n  Findings")
-    for f in result["findings"]:
-        print(f"   [{SEV_TAG[f['severity']]}] {f['ts'][11:19]} {f['rule_id']} {f['technique']:<10} {f['title']}")
+    if result["identities"]:
+        print("\n  Identities")
+        for i in result["identities"]:
+            aliases = f"  aliases: {', '.join(i['aliases'])}" if len(i["aliases"]) > 1 else ""
+            print(f"   {i['status']:<11} {i['identity']:<20} {', '.join(i['systems'])}{aliases}")
+    for category, label in (("attack", "Findings"), ("posture", "Security posture")):
+        rows = [f for f in result["findings"] if f["category"] == category]
+        if rows:
+            print(f"\n  {label}")
+        for f in rows:
+            print(f"   [{SEV_TAG[f['severity']]}] {f['ts'][11:19]} {f['rule_id']} {f['technique']:<10} {f['title']}")
     print()
 
 
@@ -77,7 +86,8 @@ def cmd_anchor(a: argparse.Namespace) -> int:
 def cmd_scan(a: argparse.Namespace) -> int:
     """Quick triage of loose files without opening a case (no custody record)."""
     events = parsers.parse_files([Path(f) for f in a.files], year=a.year)
-    result = analysis.analyze(events, detections.load_rules(Path(a.rules) if a.rules else None))
+    result = analysis.analyze(events, detections.load_rules(Path(a.rules) if a.rules else None),
+                              identity_map=identities.load_map(Path(a.identities) if a.identities else None))
     if a.json:
         json.dump(result, sys.stdout, indent=2)
     else:
@@ -143,6 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("scan", cmd_scan, "triage loose log files without a case")
     sp.add_argument("files", nargs="+"); sp.add_argument("--year", type=int)
     sp.add_argument("--rules"); sp.add_argument("--json", action="store_true")
+    sp.add_argument("--identities", help="identity map JSON {identity: [aliases]}")
 
     sp = add("serve", cmd_serve, "start the local dashboard")
     sp.add_argument("--host", default="127.0.0.1"); sp.add_argument("--port", type=int, default=8765)

@@ -29,19 +29,29 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
         for t in result["attack_chain"]
     )
 
-    findings_rows = []
-    for i, f in enumerate(result["findings"], start=1):
+    findings_rows: list[str] = []
+    posture_rows: list[str] = []
+    attack_n = posture_n = 0
+    for f in result["findings"]:
+        if f.get("category", "attack") == "attack":
+            attack_n += 1
+            label, out = f"F{attack_n:02d}", findings_rows
+        else:
+            posture_n += 1
+            label, out = f"P{posture_n:02d}", posture_rows
+        context = set(f.get("context_event_ids", []))
         evidence = "".join(
             f'<li><code>{escape(eid)}</code> {escape(events[eid]["ts"][11:19])} '
-            f'<span class="muted">{escape(events[eid]["source"])}</span> {escape(events[eid]["message"])}</li>'
+            f'<span class="muted">{escape(events[eid]["source"])}</span> {escape(events[eid]["message"])}'
+            f'{" <i class=muted>(context, not attributed)</i>" if eid in context else ""}</li>'
             for eid in f["event_ids"][:8]
         )
         more = len(f["event_ids"]) - 8
         if more > 0:
             evidence += f'<li class="muted">... and {more} more events</li>'
-        findings_rows.append(f"""
+        out.append(f"""
         <div class="finding">
-          <div class="fhead">{_badge(f["severity"])} <b>F{i:02d} &middot; {escape(f["title"])}</b>
+          <div class="fhead">{_badge(f["severity"])} <b>{label} &middot; {escape(f["title"])}</b>
             <span class="muted">{escape(f["rule_id"])} &middot; {escape(f["technique"])} {escape(f["technique_name"])}
             &middot; {escape(f["tactic"])}</span></div>
           <div>{escape(f["summary"])}</div>
@@ -54,12 +64,17 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
         f"<td>{'external' if x['external'] else 'internal'}</td><td>{x['findings']}</td></tr>"
         for x in result["iocs"]["ips"]
     ) + "".join(
-        f"<tr><td>Account</td><td><code>{escape(x['value'])}</code></td><td></td><td>{x['findings']}</td></tr>"
-        for x in result["iocs"]["users"]
-    ) + "".join(
         f"<tr><td>Host / tenant</td><td><code>{escape(x['value'])}</code></td><td></td><td>{x['findings']}</td></tr>"
         for x in result["iocs"]["hosts"]
     )
+
+    identity_rows = []
+    for i in result.get("identities", []):
+        linked = f' <span class="muted">(linked {escape(i["linked_by"])})</span>' if i.get("linked_by") else ""
+        identity_rows.append(
+            f"<tr><td><b>{escape(i['identity'])}</b></td><td>{escape(i['status'])}</td>"
+            f"<td>{escape(', '.join(i['systems']))}</td>"
+            f"<td><code>{escape(', '.join(i['aliases']))}</code>{linked}</td><td>{i['findings']}</td></tr>")
 
     ledger_rows = "".join(
         f"<tr><td>{e['seq']}</td><td>{escape(e['ts'])}</td><td>{escape(e['actor'])}</td>"
@@ -110,7 +125,7 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
 
   <div class="kpis">
     <div class="kpi">Risk score<b style="color:{SEV_COLORS[risk["level"]]}">{risk["score"]}/100</b>{_badge(risk["level"])}</div>
-    <div class="kpi">Findings<b>{stats["findings"]}</b>{stats["by_severity"]["critical"]} critical, {stats["by_severity"]["high"]} high</div>
+    <div class="kpi">Findings<b>{stats["findings"]}</b>{stats["by_severity"]["critical"]} critical, {stats["by_severity"]["high"]} high, +{stats.get("posture_findings", 0)} posture</div>
     <div class="kpi">Events analysed<b>{stats["events"]}</b>{stats["flagged_events"]} flagged</div>
     <div class="kpi">Attacker activity<b style="font-size:15px">{escape(dwell[0][11:16])} &rarr; {escape(dwell[1][11:16])}</b>UTC, {escape(dwell[0][:10])}</div>
   </div>
@@ -122,12 +137,21 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
   <div class="chain">{chain}</div>
 
   <h2>3. Findings</h2>
-  {"".join(findings_rows) or "<p>No findings.</p>"}
+  {"".join(findings_rows) or "<p>No attacker activity detected.</p>"}
 
-  <h2>4. Indicators of compromise</h2>
+  <h2>4. Identities</h2>
+  <p class="small muted">Accounts across systems linked to one identity (automatically by name, or by the case identity map).
+  Status is derived from attacker-attributed evidence only.</p>
+  <table><tr><th>Identity</th><th>Status</th><th>Systems</th><th>Aliases</th><th>Findings</th></tr>{"".join(identity_rows)}</table>
+
+  <h2>5. Indicators of compromise</h2>
   <table><tr><th>Type</th><th>Value</th><th>Scope</th><th>Findings</th></tr>{ioc_rows}</table>
 
-  <h2>5. Evidence integrity &amp; chain of custody</h2>
+  <h2>6. Security posture issues</h2>
+  <p class="small muted">Risky practices observed in the evidence. Not counted as attacker activity, in the risk score or in the IOCs.</p>
+  {"".join(posture_rows) or "<p>None observed.</p>"}
+
+  <h2>7. Evidence integrity &amp; chain of custody</h2>
   <p>{integrity}</p>
   <p class="small muted">Ledger head: <code>{escape(verification.get("head") or "-")}</code></p>
   <table><tr><th>#</th><th>Time (UTC)</th><th>Actor</th><th>Action</th><th>Evidence</th><th>SHA-256</th><th>Entry hash</th></tr>{ledger_rows}</table>

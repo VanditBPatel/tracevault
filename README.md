@@ -93,6 +93,28 @@ in a pull request. 29 rules ship today (14 host/web, 15 cloud/identity). Four ru
 Conditions are case-insensitive regexes or numeric comparisons (`{"gt": 10000000}`). Use your
 own rule pack with `--rules my-rules.json`.
 
+Add `"category": "posture"` to a rule for risky practice that isn't proof of compromise (e.g. AWS
+root use). Posture findings are listed separately and never feed the attack storyline, risk score,
+IOCs or attacker window.
+
+## Identities
+
+One person shows up under many names: `priya` in AWS, `priya@acme.io` in Okta and Microsoft 365,
+`ACME\priya` on Windows. TraceVault links them into one identity automatically (lowercase, strip
+`DOMAIN\` and `@domain`) and gives each a status from attacker-attributed evidence only:
+**created** (backdoor account), **compromised** (attacker login succeeded), **targeted** (only
+failed logins / MFA prompts) or **involved**.
+
+When auto-linking is wrong or incomplete, put an identity map in the case folder as
+`cases/<id>/identities.json` (or pass `--identities` to `scan`). The map always wins:
+
+```json
+{"Priya Shah": ["priya", "priya@acme.io", "p.shah"], "Sam (vendor)": ["sam@vendor.example"]}
+```
+
+The map's SHA-256 is written to the custody ledger with each analysis, so the linking used for a
+report is on record.
+
 ## Tests
 
 ```bash
@@ -110,6 +132,7 @@ tracevault/
   detections.py   JSON rule engine (match / threshold / followed_by)
   rules.json      bundled ATT&CK-mapped rules
   analysis.py     risk score, kill chain, IOCs, narrative
+  identities.py   cross-system identity linking and status
   custody.py      case workspace + hash-chained custody ledger
   workflow.py     case-level operations used by CLI and server
   report.py       printable HTML report

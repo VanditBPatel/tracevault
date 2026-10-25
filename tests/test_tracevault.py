@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from tracevault import analysis, detections, parsers, workflow  # noqa: E402
+from tracevault import analysis, detections, identities, parsers, workflow  # noqa: E402
 from tracevault.custody import Case  # noqa: E402
 
 SAMPLES = ROOT / "samples" / "case-001"
@@ -188,6 +188,62 @@ class CloudDetectionTests(unittest.TestCase):
         rule = next(r for r in detections.load_rules() if r["id"] == "TV-102")
         events = [e for e in sample_events() if e.src_ip == "10.0.0.15"]  # 6 failures, 1 account
         self.assertEqual(detections.run_rule(rule, events), [])
+
+
+class IdentityTests(unittest.TestCase):
+    def test_canonical_auto_linking(self):
+        self.assertEqual(identities.canonical("Priya@Acme.io"), "priya")
+        self.assertEqual(identities.canonical("ACME\\priya"), "priya")
+        self.assertEqual(identities.canonical("helpdesk$"), "helpdesk$")
+
+    def test_identity_map_merges_and_splits(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "identities.json"
+            p.write_text(json.dumps({"Priya Shah": ["priya", "p.shah"], "Sam (vendor)": ["sam@vendor.example"]}))
+            m = identities.load_map(p)
+        self.assertEqual(identities.canonical("p.shah", m), "Priya Shah")
+        self.assertEqual(identities.canonical("priya@acme.io", m), "Priya Shah")  # via auto-stripped "priya"
+        self.assertEqual(identities.canonical("sam@vendor.example", m), "Sam (vendor)")
+        self.assertEqual(identities.canonical("sam@acme.io", m), "sam")  # a different sam stays separate
+
+    def test_cloud_case_identities(self):
+        by_name = {i["identity"]: i for i in analysis.analyze(cloud_events())["identities"]}
+        priya = by_name["priya"]
+        self.assertEqual(priya["status"], "compromised")
+        self.assertEqual(set(priya["aliases"]), {"priya", "priya@acme.io"})
+        self.assertEqual(len(priya["systems"]), 3)
+        self.assertEqual(by_name["backup-svc"]["status"], "created")
+        self.assertEqual(by_name["marcus"]["status"], "targeted")
+        self.assertNotIn("root", by_name)  # root use is a posture finding, not attacker activity
+
+    def test_host_case_identities(self):
+        by_name = {i["identity"]: i["status"] for i in analysis.analyze(sample_events())["identities"]}
+        self.assertEqual(by_name["deploy"], "compromised")
+        self.assertEqual(by_name["administrator"], "compromised")
+        self.assertEqual(by_name["sysbackup"], "created")
+        self.assertEqual(by_name["helpdesk$"], "created")
+        self.assertEqual(by_name["admin"], "targeted")
+
+
+class PostureTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.result = analysis.analyze(cloud_events())
+
+    def test_root_use_is_posture(self):
+        root = next(f for f in self.result["findings"] if f["rule_id"] == "TV-201")
+        self.assertEqual(root["category"], "posture")
+        self.assertEqual(self.result["stats"]["posture_findings"], 1)
+        self.assertNotIn("Privilege Escalation - from 08:30", " ".join(self.result["narrative"]))
+
+    def test_attacker_window_and_iocs_exclude_benign_activity(self):
+        self.assertTrue(self.result["stats"]["dwell"][0].startswith("2026-10-22T09:00:05"))
+        self.assertEqual([x["value"] for x in self.result["iocs"]["ips"]], ["203.0.113.80"])
+
+    def test_impossible_travel_marks_normal_login_as_context(self):
+        travel = next(f for f in self.result["findings"] if f["rule_id"] == "TV-214")
+        self.assertEqual(len(travel["context_event_ids"]), 1)
+        self.assertEqual(travel["context_event_ids"][0], travel["event_ids"][0])
 
 
 class AnalysisTests(unittest.TestCase):

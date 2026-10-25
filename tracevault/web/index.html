@@ -70,6 +70,9 @@
   .chip { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; margin: 1px 2px 1px 0; }
   .chip.ext { border-color: var(--critical); color: var(--critical); }
   .problems { color: var(--critical); margin: 8px 0 0; }
+  .ident { padding: 4px 0; font-size: 13px; }
+  .ident .aliases { font-size: 11px; margin: 2px 0 0 2px; }
+  .card.posture { border-style: dashed; }
   @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } .chain { grid-template-columns: repeat(4, minmax(0,1fr)); } }
   @media (max-width: 720px) {
     .layout { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -94,6 +97,7 @@
 
 <script>
 const SEV = ["low", "medium", "high", "critical"];
+const STATUS_SEV = { created: "critical", compromised: "high", targeted: "medium", involved: "low" };
 const sevColor = s => `var(--${s || "line"})`;
 const $ = (sel, el = document) => el.querySelector(sel);
 // Log content is attacker-controlled: everything rendered goes through esc().
@@ -150,7 +154,17 @@ function render() {
   }
   const s = a.stats, r = a.risk;
   const dwell = s.dwell ? `${time(s.dwell[0]).slice(0,5)} &rarr; ${time(s.dwell[1]).slice(0,5)}` : "-";
-  const findings = a.findings.filter(f => state.sev === "all" || f.severity === state.sev);
+  const isAttack = f => (f.category || "attack") === "attack";
+  const findings = a.findings.filter(f => isAttack(f) && (state.sev === "all" || f.severity === state.sev));
+  const posture = a.findings.filter(f => !isAttack(f));
+  const row = f => { const idx = a.findings.indexOf(f); return `
+          <tr class="finding ${idx === state.selected ? "sel" : ""}" data-idx="${idx}">
+            <td class="mono">${time(f.ts)}</td>
+            <td><span class="sev" style="--c:${sevColor(f.severity)}">${esc(f.severity)}</span></td>
+            <td><b>${esc(f.title)}</b><div class="muted" style="font-size:12px">${esc(f.summary)}</div></td>
+            <td class="mono">${esc(f.technique)}<div class="muted">${esc(f.tactic)}</div></td>
+            <td>${[...f.entities.hosts, ...f.entities.users, ...f.entities.ips].map(x => `<span class="chip">${esc(x)}</span>`).join("")}</td>
+          </tr>`; };
   const sel = state.selected != null ? a.findings[state.selected] : null;
   const hl = new Set(sel ? sel.event_ids : []);
   const events = a.timeline.filter(e => sel ? hl.has(e.id) : (!state.flaggedOnly || e.rules.length));
@@ -160,7 +174,7 @@ function render() {
       <div class="kpi"><div class="label">Risk score</div><div class="value" style="color:${sevColor(r.level)}">${r.score}<span class="muted" style="font-size:14px">/100</span></div>
         <div class="gauge"><div style="width:${r.score}%;background:${sevColor(r.level)}"></div></div></div>
       <div class="kpi"><div class="label">Findings</div><div class="value">${s.findings}</div>
-        <div class="hint">${SEV.slice().reverse().map(x => `${s.by_severity[x]} ${x}`).join(" &middot; ")}</div></div>
+        <div class="hint">${SEV.slice().reverse().map(x => `${s.by_severity[x]} ${x}`).join(" &middot; ")}${s.posture_findings ? ` &middot; +${s.posture_findings} posture` : ""}</div></div>
       <div class="kpi"><div class="label">Events</div><div class="value">${s.events}</div><div class="hint">${s.flagged_events} flagged across ${Object.keys(s.by_source).length} artifacts</div></div>
       <div class="kpi"><div class="label">Attacker window (UTC)</div><div class="value" style="font-size:22px">${dwell}</div><div class="hint">${s.dwell ? esc(s.dwell[0].slice(0,10)) : ""}</div></div>
     </div>
@@ -170,8 +184,13 @@ function render() {
       <div class="card"><h2>Indicators of compromise</h2>
         <div class="muted" style="font-size:11px;margin-bottom:4px">IP ADDRESSES</div>
         ${a.iocs.ips.map(x => `<span class="chip ${x.external ? "ext" : ""}" title="${x.external ? "external" : "internal"}">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
-        <div class="muted" style="font-size:11px;margin:10px 0 4px">ACCOUNTS</div>
-        ${a.iocs.users.map(x => `<span class="chip">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
+        <div class="muted" style="font-size:11px;margin:10px 0 4px">IDENTITIES</div>
+        ${(a.identities || []).map(i => `
+          <div class="ident">
+            <span class="sev" style="--c:${sevColor(STATUS_SEV[i.status])}">${esc(i.status)}</span>
+            <b>${esc(i.identity)}</b> <span class="muted">${esc(i.systems.join(", "))}</span>
+            ${i.aliases.length > 1 ? `<div class="muted aliases">linked ${esc(i.linked_by)}: ${i.aliases.map(x => `<span class="mono">${esc(x)}</span>`).join(", ")}</div>` : ""}
+          </div>`).join("") || '<span class="muted">none</span>'}
         <div class="muted" style="font-size:11px;margin:10px 0 4px">HOSTS &amp; TENANTS</div>
         ${a.iocs.hosts.map(x => `<span class="chip">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
       </div>
@@ -191,16 +210,17 @@ function render() {
       </select></label><span class="muted" style="font-size:12px">Click a finding to see its evidence events.</span></div>
       <div class="scroll"><table>
         <tr><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th></tr>
-        ${findings.map(f => { const idx = a.findings.indexOf(f); return `
-          <tr class="finding ${idx === state.selected ? "sel" : ""}" data-idx="${idx}">
-            <td class="mono">${time(f.ts)}</td>
-            <td><span class="sev" style="--c:${sevColor(f.severity)}">${esc(f.severity)}</span></td>
-            <td><b>${esc(f.title)}</b><div class="muted" style="font-size:12px">${esc(f.summary)}</div></td>
-            <td class="mono">${esc(f.technique)}<div class="muted">${esc(f.tactic)}</div></td>
-            <td>${[...f.entities.hosts, ...f.entities.users, ...f.entities.ips].map(x => `<span class="chip">${esc(x)}</span>`).join("")}</td>
-          </tr>`; }).join("")}
+        ${findings.map(row).join("")}
       </table></div>
     </div>
+
+    ${posture.length ? `<div class="card posture"><h2>Security posture issues <span class="count">${posture.length}</span></h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Risky practices worth fixing. Not counted as attacker activity, the risk score, IOCs or the attacker window.</div>
+      <div class="scroll"><table>
+        <tr><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th></tr>
+        ${posture.map(row).join("")}
+      </table></div>
+    </div>` : ""}
 
     <div class="card"><h2>Super-timeline <span class="count">${events.length} of ${a.timeline.length} events</span></h2>
       <div class="tools">

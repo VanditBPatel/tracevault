@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from . import analysis, detections, parsers, report
-from .custody import Case, default_examiner
+from . import analysis, detections, identities, parsers, report
+from .custody import Case, default_examiner, sha256_file
+
+IDENTITY_MAP = "identities.json"
 
 
 def analyze_case(case: Case, examiner: str | None = None, year: int | None = None,
@@ -19,13 +21,19 @@ def analyze_case(case: Case, examiner: str | None = None, year: int | None = Non
     year = year or int(meta["created_at"][:4])
 
     events = parsers.parse_files(case.evidence_files(), year=year)
-    result = analysis.analyze(events, detections.load_rules(rules_path), case=meta)
+    # Analyst-maintained identity map; its hash goes in the ledger so the linking used
+    # for this analysis is on record.
+    map_path = case.dir / IDENTITY_MAP
+    result = analysis.analyze(events, detections.load_rules(rules_path), case=meta,
+                              identity_map=identities.load_map(map_path))
 
     (case.dir / "analysis.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     case.log("analysis.run", examiner, details={
         "events": result["stats"]["events"],
         "findings": result["stats"]["findings"],
+        "posture_findings": result["stats"]["posture_findings"],
         "risk_score": result["risk"]["score"],
+        "identity_map_sha256": sha256_file(map_path) if map_path.exists() else None,
     })
     export_report(case, result, examiner)
     return result

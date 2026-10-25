@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from . import __version__, detections
+from . import __version__, detections, identities
 from .models import SEVERITY_ORDER, Event, Finding
 
 ATTACK_TACTICS = [
@@ -64,14 +64,15 @@ def attack_chain(findings: list[Finding]) -> list[dict[str, Any]]:
 
 
 def iocs(findings: list[Finding]) -> dict[str, list[dict[str, Any]]]:
+    """Indicators from attacker-attributed evidence only (context events are excluded)."""
     ips: Counter = Counter()
     users: Counter = Counter()
     hosts: Counter = Counter()
     for f in findings:
-        ents = f.entities()
-        ips.update(ents["ips"])
-        users.update(ents["users"])
-        hosts.update(ents["hosts"])
+        attributed = f.attributed()
+        ips.update(f.attributed_ips())
+        users.update({e.user for e in attributed if e.user})
+        hosts.update({e.host for e in attributed if e.host})
     return {
         "ips": [{"value": ip, "findings": n, "external": _is_external(ip)} for ip, n in ips.most_common()],
         "users": [{"value": u, "findings": n} for u, n in users.most_common()],
@@ -79,11 +80,16 @@ def iocs(findings: list[Finding]) -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def narrative(findings: list[Finding]) -> list[str]:
-    """One plain-English line per tactic observed, in kill-chain order."""
+def narrative(findings: list[Finding], idents: list[dict[str, Any]] | None = None) -> list[str]:
+    """An identity summary, then one plain-English line per tactic observed, in kill-chain order."""
     if not findings:
-        return ["No detection rules fired on the supplied evidence."]
+        return ["No attacker activity detected in the supplied evidence."]
     lines = []
+    for status, label in (("compromised", "Compromised identities"), ("created", "Accounts created by the attacker")):
+        hits = [i for i in idents or [] if i["status"] == status]
+        if hits:
+            lines.append(f"{label}: " + "; ".join(
+                f"{i['identity']} ({', '.join(i['systems'])})" for i in hits) + ".")
     for tactic in ATTACK_TACTICS:
         hits = [f for f in findings if f.tactic == tactic]
         if not hits:
@@ -98,16 +104,24 @@ def narrative(findings: list[Finding]) -> list[str]:
     return lines
 
 
-def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | None = None) -> dict[str, Any]:
+def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | None = None,
+            identity_map: dict[str, str] | None = None) -> dict[str, Any]:
     findings = detections.run(events, rules)
     flagged: dict[str, list[str]] = {}
     for f in findings:
         for e in f.events:
             flagged.setdefault(e.id, []).append(f.rule_id)
 
-    score = risk_score(findings)
-    sev_counts = Counter(f.severity for f in findings)
-    malicious = [e for e in events if e.id in flagged]
+    # Posture findings (risky practice) are reported but do not drive the attack story,
+    # the risk score, the IOCs or the attacker window.
+    attack = [f for f in findings if f.category == "attack"]
+    posture = [f for f in findings if f.category != "attack"]
+    idents = identities.build(attack, identity_map)
+
+    score = risk_score(attack)
+    sev_counts = Counter(f.severity for f in attack)
+    attributed_ids = {e.id for f in attack for e in f.attributed()}
+    malicious = [e for e in events if e.id in attributed_ids]
 
     return {
         "tool": {"name": "TraceVault", "version": __version__},
@@ -116,17 +130,20 @@ def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | N
         "risk": {"score": score, "level": risk_level(score)},
         "stats": {
             "events": len(events),
-            "flagged_events": len(malicious),
-            "findings": len(findings),
+            "flagged_events": len(flagged),
+            "findings": len(attack),
+            "posture_findings": len(posture),
+            "identities_compromised": sum(i["status"] == "compromised" for i in idents),
             "by_severity": {s: sev_counts.get(s, 0) for s in SEVERITY_ORDER},
             "by_source": dict(Counter(e.source for e in events)),
             "by_kind": dict(Counter(e.kind for e in events).most_common()),
             "time_range": [events[0].ts.isoformat(), events[-1].ts.isoformat()] if events else None,
             "dwell": [malicious[0].ts.isoformat(), malicious[-1].ts.isoformat()] if malicious else None,
         },
-        "narrative": narrative(findings),
-        "attack_chain": attack_chain(findings),
-        "iocs": iocs(findings),
+        "narrative": narrative(attack, idents),
+        "attack_chain": attack_chain(attack),
+        "iocs": iocs(attack),
+        "identities": idents,
         "findings": [f.to_dict() for f in findings],
         # The full super-timeline, each event tagged with the rules it contributed to.
         "timeline": [{**e.to_dict(), "rules": flagged.get(e.id, [])} for e in events],

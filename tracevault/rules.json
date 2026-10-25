@@ -193,6 +193,7 @@
     "id": "TV-201",
     "title": "AWS root account used",
     "type": "match",
+    "category": "posture",
     "severity": "high",
     "tactic": "Privilege Escalation",
     "technique": "T1078.004",

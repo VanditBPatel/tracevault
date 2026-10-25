@@ -59,12 +59,24 @@ class Finding:
     summary: str
     ts: datetime
     events: list[Event]
+    # "attack" = attacker activity; "posture" = risky practice worth fixing but not proof of compromise
+    category: str = "attack"
+    # Evidence shown for context but not attributed to the attacker (e.g. the user's normal
+    # login that an impossible-travel finding is compared against)
+    context: list[Event] = field(default_factory=list)
+
+    def attributed(self) -> list[Event]:
+        ctx = {id(e) for e in self.context}
+        return [e for e in self.events if id(e) not in ctx]
 
     def entities(self) -> dict[str, list[str]]:
         hosts = sorted({e.host for e in self.events if e.host})
         users = sorted({e.user for e in self.events if e.user})
         ips = sorted({e.src_ip for e in self.events if e.src_ip})
         return {"hosts": hosts, "users": users, "ips": ips}
+
+    def attributed_ips(self) -> list[str]:
+        return sorted({e.src_ip for e in self.attributed() if e.src_ip})
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -77,6 +89,8 @@ class Finding:
             "description": self.description,
             "summary": self.summary,
             "ts": self.ts.isoformat(),
+            "category": self.category,
             "event_ids": [e.id for e in self.events],
+            "context_event_ids": [e.id for e in self.context],
             "entities": self.entities(),
         }

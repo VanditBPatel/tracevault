@@ -100,7 +100,7 @@ def is_internal_ip(value: Any) -> bool:
 
 
 def _finding(rule: dict, evs: list[Event], summary: str, key: Any = None,
-             at: Event | None = None) -> Finding:
+             at: Event | None = None, context: list[Event] | None = None) -> Finding:
     # The same behaviour means something different from inside the network: a brute-forced
     # login from an internal host is lateral movement, not initial access.
     tactic = rule["tactic"]
@@ -110,6 +110,7 @@ def _finding(rule: dict, evs: list[Event], summary: str, key: Any = None,
         rule_id=rule["id"], title=rule["title"], severity=rule["severity"], tactic=tactic,
         technique=rule["technique"], technique_name=rule.get("technique_name", ""),
         description=rule.get("description", ""), summary=summary, ts=(at or evs[0]).ts, events=evs,
+        category=rule.get("category", "attack"), context=context or [],
     )
 
 
@@ -152,7 +153,7 @@ def run_rule(rule: dict, events: list[Event]) -> list[Finding]:
                 if prev.get(fld) != cur.get(fld) and gap <= window:
                     out.append(_finding(rule, [prev, cur],
                         f"{key}: {fld} {prev.get(fld)} ({prev.src_ip or '?'}) -> {cur.get(fld)} "
-                        f"({cur.src_ip or '?'}) {round(gap / 60)} min apart", key, at=cur))
+                        f"({cur.src_ip or '?'}) {round(gap / 60)} min apart", key, at=cur, context=[prev]))
         return out
 
     if rtype == "followed_by":

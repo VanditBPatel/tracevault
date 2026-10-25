@@ -213,6 +213,8 @@ def parse_cloudtrail(path: Path) -> list[Event]:
         }
         if ident.get("accessKeyId"):
             fields["access_key"] = ident["accessKeyId"]
+        if isinstance(request, dict) and request.get("userName"):
+            fields["target_user"] = request["userName"]  # IAM user being created/changed
 
         if name == "ConsoleLogin":
             ok = (rec.get("responseElements") or {}).get("ConsoleLogin") == "Success"

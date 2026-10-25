@@ -24,6 +24,12 @@
   `process.create`, `web.request`), `host`, `user`, `src_ip`, `message`, `raw`, parser `fields`.
 - **Finding** — a rule hit: rule metadata (severity, ATT&CK tactic/technique), summary, and the
   list of Events that caused it. Findings never exist without evidence.
+  - `category`: `attack` (drives storyline, risk, IOCs, attacker window) or `posture` (reported
+    separately as risky practice).
+  - `context`: evidence shown for comparison but not attributed to the attacker — e.g. the user's
+    normal login in an impossible-travel pair. IOCs and identity status use only attributed events.
+- **Identity** — aliases of one person across systems (`identities.py`), auto-linked by name or
+  set by `cases/<id>/identities.json`, with a status: created / compromised / targeted / involved.
 
 ## Chain of custody
 
