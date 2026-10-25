@@ -195,7 +195,7 @@ will need a database-backed store.
 
 ## Identities
 
-One person shows up under many names: `priya` in AWS, `priya@acme.io` in Okta and Microsoft 365,
+One person shows up under many names: `priya` in AWS, `priya@acme.example` in Okta and Microsoft 365,
 `ACME\priya` on Windows. TraceVault links them into one identity automatically (lowercase, strip
 `DOMAIN\` and `@domain`) and gives each a status from attacker-attributed evidence only:
 **created** (backdoor account), **compromised** (attacker login succeeded), **targeted** (only
@@ -205,7 +205,7 @@ When auto-linking is wrong or incomplete, put an identity map in the case folder
 `cases/<id>/identities.json` (or pass `--identities` to `scan`). The map always wins:
 
 ```json
-{"Priya Shah": ["priya", "priya@acme.io", "p.shah"], "Sam (vendor)": ["sam@vendor.example"]}
+{"Priya Shah": ["priya", "priya@acme.example", "p.shah"], "Sam (vendor)": ["sam@vendor.example"]}
 ```
 
 The map's SHA-256 is written to the custody ledger with each analysis, so the linking used for a

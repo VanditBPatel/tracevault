@@ -1,11 +1,11 @@
 """Link the many spellings of one person across systems into a single identity.
 
-`priya` (AWS IAM), `priya@acme.io` (Okta, Microsoft 365) and `ACME\\priya` (Windows) are the
+`priya` (AWS IAM), `priya@acme.example` (Okta, Microsoft 365) and `ACME\\priya` (Windows) are the
 same human. Auto-linking lowercases the name and strips a DOMAIN\\ prefix and an @domain
 suffix. When that is wrong (two different "sam"s) or not enough (`p.shah` is also Priya),
 an analyst writes an identity map, which always wins:
 
-  {"Priya Shah": ["priya", "priya@acme.io", "p.shah"], "Sam (vendor)": ["sam@vendor.example"]}
+  {"Priya Shah": ["priya", "priya@acme.example", "p.shah"], "Sam (vendor)": ["sam@vendor.example"]}
 
 Each identity gets a status, derived only from attacker-attributed evidence:
   created      the account was created during the attack (backdoor)

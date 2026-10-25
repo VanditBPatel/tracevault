@@ -117,7 +117,7 @@ class CloudParserTests(unittest.TestCase):
 
     def test_m365_ip_port_stripped_and_params_flattened(self):
         events = parsers.parse_m365(CLOUD / "m365_audit.jsonl")
-        login = next(e for e in events if e.user == "priya@acme.io" and e.kind == "auth.success")
+        login = next(e for e in events if e.user == "priya@acme.example" and e.kind == "auth.success")
         self.assertEqual(login.src_ip, "203.0.113.80")
         rule = next(e for e in events if e.fields["operation"] == "New-InboxRule")
         self.assertIn("ForwardTo=invoices@acme-billing.example", rule.fields["parameters"])
@@ -130,7 +130,7 @@ class CloudParserTests(unittest.TestCase):
             with open(p, "w", newline="", encoding="utf-8-sig") as fh:
                 w = csv.writer(fh)
                 w.writerow(["RecordId", "CreationDate", "RecordType", "Operation", "UserId", "AuditData"])
-                w.writerow(["1", "2026-10-22T09:14:05", "ExchangeAdmin", "New-InboxRule", "priya@acme.io", json.dumps(record)])
+                w.writerow(["1", "2026-10-22T09:14:05", "ExchangeAdmin", "New-InboxRule", "priya@acme.example", json.dumps(record)])
             self.assertEqual(parsers.detect_format(p), "m365")
             (e,) = parsers.parse_file(p)
             self.assertEqual(e.fields["operation"], "New-InboxRule")
@@ -140,7 +140,7 @@ class CloudParserTests(unittest.TestCase):
         kinds = [e.kind for e in events]
         self.assertEqual(kinds.count("mfa.push"), 6)
         self.assertEqual(kinds.count("mfa.deny"), 4)
-        last = [e for e in events if e.kind == "auth.success" and e.user == "priya@acme.io"][-1]
+        last = [e for e in events if e.kind == "auth.success" and e.user == "priya@acme.example"][-1]
         self.assertEqual(last.fields["country"], "Netherlands")
 
     def test_clean_ip(self):
@@ -168,7 +168,7 @@ class CloudDetectionTests(unittest.TestCase):
         for f in self.findings:
             self.assertNotIn("deploy-bot", f.entities()["users"], f.title)
             if f.rule_id != "TV-102" and f.rule_id != "TV-100" and f.rule_id != "TV-101":
-                self.assertNotIn("marcus@acme.io", f.entities()["users"], f.title)
+                self.assertNotIn("marcus@acme.example", f.entities()["users"], f.title)
 
     def test_spray_counts_distinct_accounts(self):
         spray = next(f for f in self.findings if f.rule_id == "TV-102")
@@ -581,7 +581,7 @@ class CollectionTests(unittest.TestCase):
 
 class IdentityTests(unittest.TestCase):
     def test_canonical_auto_linking(self):
-        self.assertEqual(identities.canonical("Priya@Acme.io"), "priya")
+        self.assertEqual(identities.canonical("Priya@Acme.example"), "priya")
         self.assertEqual(identities.canonical("ACME\\priya"), "priya")
         self.assertEqual(identities.canonical("helpdesk$"), "helpdesk$")
 
@@ -591,15 +591,15 @@ class IdentityTests(unittest.TestCase):
             p.write_text(json.dumps({"Priya Shah": ["priya", "p.shah"], "Sam (vendor)": ["sam@vendor.example"]}))
             m = identities.load_map(p)
         self.assertEqual(identities.canonical("p.shah", m), "Priya Shah")
-        self.assertEqual(identities.canonical("priya@acme.io", m), "Priya Shah")  # via auto-stripped "priya"
+        self.assertEqual(identities.canonical("priya@acme.example", m), "Priya Shah")  # via auto-stripped "priya"
         self.assertEqual(identities.canonical("sam@vendor.example", m), "Sam (vendor)")
-        self.assertEqual(identities.canonical("sam@acme.io", m), "sam")  # a different sam stays separate
+        self.assertEqual(identities.canonical("sam@acme.example", m), "sam")  # a different sam stays separate
 
     def test_cloud_case_identities(self):
         by_name = {i["identity"]: i for i in analysis.analyze(cloud_events())["identities"]}
         priya = by_name["priya"]
         self.assertEqual(priya["status"], "compromised")
-        self.assertEqual(set(priya["aliases"]), {"priya", "priya@acme.io"})
+        self.assertEqual(set(priya["aliases"]), {"priya", "priya@acme.example"})
         self.assertEqual(len(priya["systems"]), 3)
         self.assertEqual(by_name["backup-svc"]["status"], "created")
         self.assertEqual(by_name["marcus"]["status"], "targeted")
