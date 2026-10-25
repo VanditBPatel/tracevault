@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **Linux evidence collector** (`collect-tracevault.sh`, bash, nothing to install): copies
+  `/var/log` auth, syslog/messages, auditd, web access logs and wtmp/btmp byte-for-byte,
+  including rotated `.gz` files; exports the systemd journal for a time window; and writes the
+  same hash manifest as the Windows collector. `--root` collects from a mounted disk image. It
+  never follows symlinks out of `/var/log`. Get it with `tracevault collector-script linux`.
+- TraceVault reads **gzip-compressed logs** directly, so rotated logs are ingested as collected.
+- **journalctl output** is parsed: `-- …` marker lines are skipped and `+0000` / `+05:30`
+  offsets are converted to UTC.
+- CI runs the Linux collector as root on a real Ubuntu runner after writing a simulated SSH brute
+  force into the journal, and checks it is detected; it also checks that a tampered collection
+  is refused.
+- `.gitattributes` keeps shell scripts LF so they run on Linux when checked out on Windows.
+
 ## 0.4.2 - 2026-10-25
 
 - **New rule TV-040 "Service launched encoded PowerShell"** (critical, T1569.002): the Windows

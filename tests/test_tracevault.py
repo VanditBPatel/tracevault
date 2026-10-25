@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -487,6 +488,75 @@ class ServerTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(req, timeout=10)
         self.assertEqual(ctx.exception.code, 400)
+
+
+class LinuxCollectionTests(unittest.TestCase):
+    """Linux collector output: journal export, gzip-rotated logs, and the bash script itself."""
+
+    def test_journal_export_parses(self):
+        lines = ["-- Logs begin at Sat 2026-10-24 06:00:00 UTC. --",
+                 "2026-10-25T05:00:01.123456+0000 web-02 sshd[812]: Failed password for invalid user admin from 203.0.113.99 port 4242 ssh2",
+                 "-- Boot 0f3c --",
+                 "2026-10-25T07:00:03.5+0530 web-02 sudo[900]:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/bin/bash"]
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "web-02_journal.log"
+            p.write_text("\n".join(lines) + "\n")
+            self.assertEqual(parsers.detect_format(p), "syslog")
+            events = parsers.parse_file(p)
+        self.assertEqual([e.kind for e in events], ["auth.failure", "priv.sudo"])
+        self.assertEqual(events[0].ts.isoformat(), "2026-10-25T05:00:01.123456+00:00")
+        self.assertEqual(events[1].ts.isoformat(), "2026-10-25T01:30:03.500000+00:00")  # +0530 -> UTC
+
+    def test_gzip_rotated_log_parses(self):
+        import gzip
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "web-01_auth.log.2.gz"
+            with gzip.open(p, "wt") as fh:
+                fh.write((SAMPLES / "web-01_auth.log").read_text())
+            gz_events = parsers.parse_files([p], year=2026)
+        plain = parsers.parse_files([SAMPLES / "web-01_auth.log"], year=2026)
+        self.assertEqual([(e.kind, e.ts, e.message) for e in gz_events], [(e.kind, e.ts, e.message) for e in plain])
+
+    def test_script_version_and_line_endings(self):
+        from tracevault import __version__
+        from tracevault.cli import COLLECTORS
+        raw = COLLECTORS["linux"].read_bytes()
+        self.assertNotIn(b"\r\n", raw)  # CRLF breaks bash on Linux
+        self.assertIn(f"COLLECTOR_VERSION='{__version__}'".encode(), raw)
+
+    @unittest.skipIf(os.name == "nt" or not shutil.which("bash"), "runs the bash collector; Linux/macOS only")
+    def test_collector_end_to_end_on_fake_root(self):
+        import gzip
+        import subprocess
+        from tracevault.cli import COLLECTORS
+        with tempfile.TemporaryDirectory() as d:
+            root, out = Path(d) / "root", Path(d) / "out"
+            (root / "var/log/nginx").mkdir(parents=True)
+            (root / "etc").mkdir()
+            (root / "etc/hostname").write_text("web-01\n")
+            auth = (SAMPLES / "web-01_auth.log").read_text().splitlines(keepends=True)
+            (root / "var/log/auth.log").write_text("".join(auth[10:]))
+            with gzip.open(root / "var/log/auth.log.2.gz", "wt") as fh:
+                fh.write("".join(auth[:10]))
+            (root / "var/log/nginx/access.log").write_text((SAMPLES / "web-01_access.log").read_text())
+            secret = Path(d) / "shadow"
+            secret.write_text("root:$6$secret\n")
+            os.symlink(secret, root / "var/log/secure")  # must not be followed out of /var/log
+            run = subprocess.run(["bash", str(COLLECTORS["linux"]), "--root", str(root), "--out", str(out),
+                                  "--examiner", "tester", "--no-journal"], capture_output=True, text=True, timeout=120)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            manifest = json.loads((out / "manifest.json").read_text())
+            names = sorted(f["name"] for f in manifest["files"])
+            self.assertEqual(names, ["web-01_auth.log", "web-01_auth.log.2.gz", "web-01_nginx_access.log"])
+            self.assertFalse(any("secure" in p.name for p in out.iterdir()))
+            case = Case.create(Path(d) / "cases", "LIN-1", examiner="tester")
+            workflow.ingest_collection(case, out, examiner="tester")
+            result = workflow.analyze_case(case, examiner="tester", year=2026)
+            direct = detections.run(parsers.parse_files([SAMPLES / "web-01_auth.log", SAMPLES / "web-01_access.log"], year=2026))
+            self.assertEqual(sorted(f["rule_id"] for f in result["findings"]), sorted(f.rule_id for f in direct))
+            self.assertTrue(case.verify()["ok"])
+            for p in case.evidence_files():
+                os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
 
 
 class ServicePowerShellRuleTests(unittest.TestCase):

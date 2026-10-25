@@ -124,6 +124,39 @@ Every file is checked against the hashes recorded on the host. If any file is mi
 altered, **nothing** is ingested. The collection details are logged as an `evidence.collection`
 custody entry, so the chain of custody starts at collection, not at ingest.
 
+## Collecting evidence from a Linux host
+
+The Linux collector is one bash script with nothing to install. Get it with:
+
+```bash
+tracevault collector-script linux
+```
+
+On the host, as root (auth logs, `btmp` and the journal are protected):
+
+```bash
+sudo bash ./collect-tracevault.sh --examiner "J. Doe"
+```
+
+- It copies `/var/log` auth logs (`auth.log`, `secure`), `syslog` / `messages`, auditd, nginx /
+  Apache / httpd access logs, and `wtmp` / `btmp` login records **byte-for-byte**. Rotated and
+  `.gz` files are copied as they are, and TraceVault reads gzip directly.
+- It exports the **systemd journal** for a time window (default last 72 hours, `--since` /
+  `--until`). Many modern servers have no `auth.log` and log only to the journal.
+- `--root /mnt/image` collects from a mounted disk image instead of the running system,
+  including its journal (`journalctl -D`). This lets you examine a machine without booting it.
+- It writes the same `manifest.json` with SHA-256 hashes as the Windows collector. It follows no
+  symlinks out of `/var/log`, changes nothing on the host, and sends nothing over the network.
+
+Then, on the analyst machine, verify and ingest the folder exactly as for Windows:
+
+```bash
+tracevault ingest-collection IR-2026-014 TraceVault-web-01-20261025T060158Z
+```
+
+CI runs the collector as root on a real Ubuntu runner, after writing a simulated SSH brute
+force into the journal, and checks that TraceVault detects it from the collected evidence.
+
 ## Working a real case
 
 ```bash
@@ -139,7 +172,7 @@ tracevault anchor IR-2026-014
 | `case-new` | Create a case workspace and open its custody ledger |
 | `ingest` | Hash the original, copy it read-only into the case, re-hash, log both |
 | `ingest-collection` | Verify a collector folder against its manifest, then ingest all of it (or nothing) |
-| `collector-script` | Write the Windows collector script, to copy to a host |
+| `collector-script` | Write the Windows (`windows`) or Linux (`linux`) collector script, to copy to a host |
 | `analyze` | Parse all evidence, run detections, write `analysis.json` + `report.html` |
 | `verify` | Re-check the whole ledger chain and every evidence hash (exit code 2 on failure) |
 | `anchor` | Print the ledger head hash, to timestamp externally (notary, RFC 3161 TSA, blockchain) |
@@ -296,7 +329,7 @@ tracevault/            the package
   server.py            stdlib HTTP dashboard + JSON API
   validate.py          accuracy scoring against public datasets
   web/index.html       dashboard UI
-  collectors/          Collect-TraceVault.ps1 (Windows evidence collector)
+  collectors/          Collect-TraceVault.ps1 (Windows) and collect-tracevault.sh (Linux) collectors
   samples/case-00x/    sample breach evidence used by `tracevault demo`
   datasets/            validation manifests (otrf = tuning set, otrf-holdout = held-out set)
 tests/                 unittest suite

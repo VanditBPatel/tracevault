@@ -12,12 +12,13 @@ Supported formats (auto-detected from content):
 from __future__ import annotations
 
 import csv
+import gzip
 import ipaddress
 import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import IO, Any, Callable, Iterable
 from urllib.parse import unquote_plus
 
 from .models import Event
@@ -29,7 +30,8 @@ SYSLOG_RE = re.compile(
     r"(?P<host>\S+)\s(?P<prog>[\w\-/.]+)(?:\[(?P<pid>\d+)\])?:\s(?P<msg>.*)$"
 )
 SYSLOG_ISO_RE = re.compile(
-    r"^(?P<iso>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\s"
+    # journalctl -o short-iso writes the offset as +0000 on older systemd, +00:00 on newer.
+    r"^(?P<iso>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))\s"
     r"(?P<host>\S+)\s(?P<prog>[\w\-/.]+)(?:\[(?P<pid>\d+)\])?:\s(?P<msg>.*)$"
 )
 
@@ -392,7 +394,7 @@ def _m365_records(path: Path) -> list[dict]:
     if first.lstrip()[:1] in "[{":
         records = _json_records(path) or []
     else:  # Purview export: CSV whose AuditData column holds the JSON record
-        with open(path, encoding="utf-8-sig", newline="") as fh:
+        with _open_text(path, newline="") as fh:
             records = [row for row in csv.DictReader(fh)]
     out = []
     for rec in records:
@@ -488,8 +490,9 @@ def _classify_json(rec: dict) -> str | None:
 
 
 def detect_format(path: Path) -> str | None:
-    """Sniff the content to pick a parser."""
-    first = next(iter(_lines(path)), None)
+    """Sniff the content to pick a parser. Works on gzip-compressed logs too."""
+    # journalctl output can start with "-- Logs begin at ..." / "-- Boot ... --" marker lines.
+    first = next((line for line in _lines(path) if not line.startswith("-- ")), None)
     if first is None:
         return None
     if first.lstrip()[:1] in "[{":
@@ -548,17 +551,37 @@ def mark_duplicates(events: list[Event], window: float = 2.0) -> int:
 
 # --------------------------------------------------------------------------- helpers
 
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _open_text(path: Path, newline: str | None = None) -> IO[str]:
+    """Open a log as text, transparently decompressing gzip (rotated logs such as auth.log.2.gz).
+    Evidence is ingested byte-for-byte as collected; decompression only happens when reading."""
+    with open(path, "rb") as fh:
+        magic = fh.read(2)
+    if magic == GZIP_MAGIC:
+        return gzip.open(path, "rt", encoding="utf-8-sig", errors="replace", newline=newline)
+    return open(path, encoding="utf-8-sig", errors="replace", newline=newline)
+
+
 def _lines(path: Path) -> Iterable[str]:
-    with open(path, encoding="utf-8-sig", errors="replace") as fh:
-        for line in fh:
-            line = line.rstrip("\r\n")
-            if line.strip():
-                yield line
+    try:
+        with _open_text(path) as fh:
+            for line in fh:
+                line = line.rstrip("\r\n")
+                if line.strip():
+                    yield line
+    except (OSError, EOFError):  # truncated or corrupt gzip: keep what was read
+        return
 
 
 def _json_records(path: Path) -> list[dict] | None:
     """Load a JSON document ({"Records": [...]}, an array, or one object) or JSON Lines."""
-    text = Path(path).read_text(encoding="utf-8-sig", errors="replace").strip()
+    try:
+        with _open_text(path) as fh:
+            text = fh.read().strip()
+    except (OSError, EOFError):
+        return None
     if not text or text[0] not in "[{":
         return None
     try:
@@ -595,8 +618,18 @@ def _short(value: Any, limit: int = 60) -> str:
     return s if len(s) <= limit else s[: limit - 3] + "..."
 
 
+_TZ_NO_COLON = re.compile(r"([+-]\d{2})(\d{2})$")
+_LONG_FRACTION = re.compile(r"(\.\d{6})\d+")
+
+
 def _iso(value: str) -> datetime:
-    return _to_utc(datetime.fromisoformat(str(value).replace("Z", "+00:00")))
+    # Normalise what Python 3.10's fromisoformat rejects: "Z", a +HHMM offset (journalctl),
+    # and more than six fractional digits (Windows writes seven).
+    s = str(value).strip().replace("Z", "+00:00")
+    if "T" in s or " " in s:
+        s = _TZ_NO_COLON.sub(r"\1:\2", s)
+    s = _LONG_FRACTION.sub(r"\1", s)
+    return _to_utc(datetime.fromisoformat(s))
 
 
 def _to_utc(dt: datetime) -> datetime:

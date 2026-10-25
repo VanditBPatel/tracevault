@@ -59,7 +59,13 @@ def cmd_ingest(a: argparse.Namespace) -> int:
     return 0
 
 
-COLLECTORS = {"windows": Path(__file__).resolve().parent / "collectors" / "Collect-TraceVault.ps1"}
+COLLECTORS = {"windows": Path(__file__).resolve().parent / "collectors" / "Collect-TraceVault.ps1",
+              "linux": Path(__file__).resolve().parent / "collectors" / "collect-tracevault.sh"}
+COLLECTOR_HOWTO = {
+    "windows": ("from an elevated PowerShell",
+                'powershell -NoProfile -ExecutionPolicy Bypass -File .\\{name} -Examiner "<your name>"'),
+    "linux": ("as root", 'sudo bash ./{name} --examiner "<your name>"'),
+}
 
 
 def cmd_ingest_collection(a: argparse.Namespace) -> int:
@@ -73,7 +79,10 @@ def cmd_ingest_collection(a: argparse.Namespace) -> int:
     for s in d["skipped"]:
         print(f"  - skipped on host: {s.get('channel')}: {s.get('reason')}")
     if not d["elevated"]:
-        print("  ! the collector was not run as Administrator, so the Security log may be missing")
+        if "Linux" in str(d.get("collector")):
+            print("  ! the collector was not run as root, so protected logs (auth.log, secure, btmp, journal) may be missing")
+        else:
+            print("  ! the collector was not run as Administrator, so the Security log may be missing")
     for name in d["unlisted_files_not_ingested"]:
         print(f"  ! not in the manifest, NOT ingested: {name}")
     print(f"Next: tracevault --cases {a.cases} analyze {a.case_id}")
@@ -85,9 +94,10 @@ def cmd_collector_script(a: argparse.Namespace) -> int:
     out = Path(a.output or src.name)
     if out.exists() and not a.force:
         raise FileExistsError(f"{out} exists (use --force to overwrite)")
-    out.write_bytes(src.read_bytes())
-    print(f"Wrote {out}. Copy it to the host and run from an elevated PowerShell:")
-    print(f"  powershell -NoProfile -ExecutionPolicy Bypass -File .\\{out.name} -Examiner \"<your name>\"")
+    out.write_bytes(src.read_bytes())  # bytes as shipped: the .sh keeps its LF line endings
+    where, how = COLLECTOR_HOWTO[a.platform]
+    print(f"Wrote {out}. Copy it to the host and run it {where}:")
+    print("  " + how.format(name=out.name))
     return 0
 
 

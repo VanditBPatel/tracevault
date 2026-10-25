@@ -83,3 +83,53 @@ jobs:
           if ($LASTEXITCODE -eq 0) { Write-Error 'tampered collection was accepted'; exit 1 }
           Write-Host 'tampered collection refused as expected'
           exit 0
+
+  linux-collector:
+    # Runs the Linux collector for real on the runner as root, after writing a simulated SSH
+    # brute force + successful login into the journal, then checks TraceVault detects it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install .
+      - name: Write the packaged collector script
+        run: tracevault collector-script linux -o "$RUNNER_TEMP/collect-tracevault.sh"
+      - name: Simulate an SSH brute force followed by a successful login (journal only)
+        run: |
+          for port in 4201 4202 4203 4204 4205 4206; do
+            logger -p auth.warning -t sshd "Failed password for invalid user ci-attacker from 203.0.113.99 port $port ssh2"
+          done
+          logger -p auth.info -t sshd "Accepted password for ci-attacker from 203.0.113.99 port 4207 ssh2"
+          sudo journalctl --sync || sleep 3
+      - name: Collect as root
+        run: |
+          sudo bash "$RUNNER_TEMP/collect-tracevault.sh" --since "1 hour ago" --out "$RUNNER_TEMP/lc" --examiner ci
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/lc"
+          cat "$RUNNER_TEMP/lc/manifest.json"
+      - name: Ingest, analyse, verify and check the simulated attack was found
+        run: |
+          set -e
+          cases="$RUNNER_TEMP/cases"
+          tracevault --cases "$cases" case-new CI-linux --examiner ci
+          tracevault --cases "$cases" ingest-collection CI-linux "$RUNNER_TEMP/lc" --examiner ci
+          tracevault --cases "$cases" analyze CI-linux --examiner ci
+          tracevault --cases "$cases" verify CI-linux
+          python - "$cases/CI-linux/analysis.json" <<'EOF'
+          import json, sys
+          a = json.load(open(sys.argv[1]))
+          hits = {f["rule_id"]: f for f in a["findings"]}
+          assert "TV-101" in hits, f"brute force + login not detected; rules fired: {sorted(hits)}"
+          assert "203.0.113.99" in hits["TV-101"]["entities"]["ips"], hits["TV-101"]["entities"]
+          print("detected:", hits["TV-101"]["title"], "-", hits["TV-101"]["summary"])
+          EOF
+      - name: Tampered collection is refused
+        run: |
+          echo "2026-01-01T00:00:00+00:00 x sshd[1]: injected" >> "$RUNNER_TEMP/lc/"*_journal.log
+          tracevault --cases "$RUNNER_TEMP/cases" case-new CI-linux-tamper --examiner ci
+          if tracevault --cases "$RUNNER_TEMP/cases" ingest-collection CI-linux-tamper "$RUNNER_TEMP/lc"; then
+            echo "tampered collection was accepted"; exit 1
+          fi
+          echo "tampered collection refused as expected"
