@@ -1,6 +1,9 @@
 # TraceVault
 
 [![tests](https://github.com/VanditBPatel/tracevault/actions/workflows/tests.yml/badge.svg)](https://github.com/VanditBPatel/tracevault/actions/workflows/tests.yml)
+[![codeql](https://github.com/VanditBPatel/tracevault/actions/workflows/codeql.yml/badge.svg)](https://github.com/VanditBPatel/tracevault/actions/workflows/codeql.yml)
+[![release](https://img.shields.io/github/v/release/VanditBPatel/tracevault)](https://github.com/VanditBPatel/tracevault/releases/latest)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **Evidence-first Digital Forensics & Incident Response (DFIR) triage for lean security teams.**
 
@@ -15,12 +18,20 @@ Microsoft 365, Okta) — and in seconds produces:
   action is written to a hash-chained ledger, so any later change to evidence or records is detected
 - a **printable incident report** and a local investigation **dashboard**
 
-It uses only the Python 3.10+ standard library. There are no dependencies and nothing calls the
-internet, so it is safe to drop on an IR jump box.
+It uses only the Python 3.10+ standard library, with no dependencies. It works fully offline, and
+the only command that touches the internet is `validate --fetch`, which you run on purpose to
+download public test datasets. That makes it safe to drop on an IR jump box.
+
+![TraceVault dashboard showing the CASE-002 cloud identity takeover: risk score, attacker window, storyline, an identity compromised across Okta, Microsoft 365 and AWS, the ATT&CK kill chain and findings](docs/images/dashboard.png)
+
+*The dashboard on the bundled CASE-002 sample: an Okta password spray and MFA push bombing, a
+mailbox forwarding rule in Microsoft 365, and an AWS backdoor user, public bucket and stopped
+CloudTrail, all from made-up data.*
 
 > Business plan, market and roadmap: [docs/BUSINESS.md](docs/BUSINESS.md) ·
 > Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
-> Measured accuracy: [docs/VALIDATION.md](docs/VALIDATION.md) · License: Apache-2.0
+> Measured accuracy: [docs/VALIDATION.md](docs/VALIDATION.md) ·
+> [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · License: Apache-2.0
 
 ## Install
 
@@ -249,7 +260,7 @@ tracevault/            the package
   datasets/            validation manifests (otrf = tuning set, otrf-holdout = held-out set)
 tests/                 unittest suite
 docs/                  business plan, architecture, validation results
-.github/workflows/     CI: tests on Linux and Windows, Python 3.10-3.13
+.github/               CI (tests, Windows collector, CodeQL), Dependabot, issue forms
 ```
 
 ## License

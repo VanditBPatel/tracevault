@@ -1,0 +1,13 @@
+# TraceVault has no Python dependencies, so the only things to keep current are the GitHub
+# Actions used by CI and CodeQL.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

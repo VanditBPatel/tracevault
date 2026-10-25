@@ -1,0 +1,54 @@
+name: False positive
+description: A rule fired on activity that was benign.
+labels: [false-positive, detection]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        False-positive reports are how the rules get better. You can suppress the finding in your own case right away (Suppress button, or `tracevault suppress`). This report helps fix it for everyone.
+  - type: input
+    id: rule
+    attributes:
+      label: Rule ID
+      placeholder: TV-022
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TraceVault version
+      placeholder: TraceVault 0.3.0
+    validations:
+      required: true
+  - type: textarea
+    id: activity
+    attributes:
+      label: What the activity really was
+      description: For example "McAfee installs a service for each scheduled job" or "Azure VM agent collecting logs".
+    validations:
+      required: true
+  - type: textarea
+    id: event
+    attributes:
+      label: Sanitized event(s)
+      description: The fields that triggered the rule (process path, service name, command line...). Replace hostnames, accounts and IPs with made-up values.
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: frequency
+    attributes:
+      label: How often it fires
+      placeholder: about 30 times a day on every laptop with this software
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix (optional)
+      description: A narrow exclusion, a better condition, or grouping. Mention what a real attacker could hide behind it.
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Data check
+      options:
+        - label: The events above are sanitized and contain no real hostnames, accounts, IPs or customer data.
+          required: true

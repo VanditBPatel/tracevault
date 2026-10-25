@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in TraceVault crashes or behaves wrongly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a **security** problem, do not file an issue. Use **Security > Report a vulnerability** instead (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: TraceVault version
+      description: Output of `tracevault --version`
+      placeholder: TraceVault 0.3.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS and Python version (and PowerShell version for collector problems)
+      placeholder: Windows 11, Python 3.12, Windows PowerShell 5.1
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Include the full command and its output or traceback.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps, ideally with a small made-up evidence file. Never attach evidence from a real incident.
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Data check
+      options:
+        - label: Anything I attached is made up or fully sanitized (no real hostnames, accounts, IPs or customer data).
+          required: true

@@ -175,6 +175,8 @@ async function loadCases(selectId) {
 async function openCase(id, keepView = false) {
   document.querySelectorAll(".case-item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
   current = await api(`/api/cases/${encodeURIComponent(id)}`);
+  // The open case lives in the URL (#CASE-002), so a case can be linked to and survives reload.
+  try { history.replaceState(null, "", "#" + encodeURIComponent(id)); } catch { /* sandboxed frame */ }
   if (!keepView) state = { ...state, selected: null, suppressFor: null, mode: "flagged", page: null, q: "" };
   else state = { ...state, selected: null, suppressFor: null };
   $("#reanalyze").hidden = false;
@@ -445,7 +447,8 @@ $("#reanalyze").onclick = async () => {
   } catch (err) { alert(err.message); }
   finally { btn.disabled = false; btn.textContent = "Re-run analysis"; }
 };
-loadCases().catch(err => { $("#main").innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`; });
+const caseFromUrl = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; } };
+loadCases(caseFromUrl()).catch(err => { $("#main").innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`; });
 </script>
 </body>
 </html>

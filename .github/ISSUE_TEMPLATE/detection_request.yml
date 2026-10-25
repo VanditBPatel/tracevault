@@ -1,0 +1,47 @@
+name: Detection request
+description: Ask for a new rule, or report attacker activity TraceVault missed.
+labels: [detection, enhancement]
+body:
+  - type: input
+    id: technique
+    attributes:
+      label: MITRE ATT&CK technique
+      placeholder: T1003.001 OS Credential Dumping - LSASS Memory
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Log source that shows it
+      options:
+        - Windows Security log
+        - Sysmon
+        - Windows System log
+        - Linux auth / syslog
+        - Web server access log
+        - AWS CloudTrail
+        - Microsoft 365 audit log
+        - Okta System Log
+        - Other / not supported yet
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What the activity looks like in the logs
+      description: Sanitized example events, or a public dataset that contains it (for example an OTRF Security-Datasets file).
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: benign
+    attributes:
+      label: Benign look-alikes
+      description: Legitimate software or admin work that produces similar events, which the rule must not flag.
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Data check
+      options:
+        - label: The examples are made up, sanitized, or from a public dataset. None are from a real incident.
+          required: true
