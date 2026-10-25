@@ -72,13 +72,35 @@
   .problems { color: var(--critical); margin: 8px 0 0; }
   .ident { padding: 4px 0; font-size: 13px; }
   .ident .aliases { font-size: 11px; margin: 2px 0 0 2px; }
-  .card.posture { border-style: dashed; }
+  .card.posture, .card.suppressed { border-style: dashed; }
+  button.small { padding: 3px 9px; font-size: 12px; }
+  input[type=text], input[type=search], textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+  input[type=text]:focus, input[type=search]:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  .examiner { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .examiner input { width: 150px; }
+  .verify { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .verify .when { color: var(--muted); font-size: 11px; }
+  tr.form td { background: var(--panel-2); }
+  /* Log text is attacker-controlled: a long Base64 payload or path must not widen the layout. */
+  tr.finding td:nth-child(3), .ev .msg, .note, .supform .cond { overflow-wrap: anywhere; }
+  tr.finding td:nth-child(1), tr.finding td:nth-child(2), tr.finding td:nth-child(6) { white-space: nowrap; }
+  .supform { display: grid; gap: 10px; padding: 4px 2px; }
+  .supform fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0; padding: 8px 10px; min-width: 0; }
+  .supform legend { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 0 4px; }
+  .supform label { display: flex; gap: 8px; align-items: baseline; font-size: 13px; padding: 2px 0; }
+  .supform .cond { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+  .supform textarea { width: 100%; min-height: 54px; resize: vertical; }
+  .supform .actions { display: flex; gap: 8px; align-items: center; }
+  .supform .err { color: var(--critical); font-size: 12px; }
+  .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
   @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } .chain { grid-template-columns: repeat(4, minmax(0,1fr)); } }
   @media (max-width: 720px) {
     .layout { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); }
     main { padding: 16px; } .chain { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .ev { grid-template-columns: 64px 1fr; } .ev .src, .ev .kind { display: none; }
     header .sub { display: none; }
+    header { flex-wrap: wrap; } .examiner input { width: 110px; }
+    tr.finding td:nth-child(4), tr.finding td:nth-child(5), tr.fhead th:nth-child(4), tr.fhead th:nth-child(5) { display: none; }
   }
 </style>
 </head>
@@ -87,6 +109,7 @@
   <div class="logo">Trace<span>Vault</span></div>
   <div class="sub">Evidence-first incident triage</div>
   <div class="spacer"></div>
+  <label class="examiner">Examiner <input type="text" id="examiner" maxlength="80" placeholder="your name" autocomplete="name"></label>
   <button id="reanalyze" hidden>Re-run analysis</button>
   <button id="report" class="primary" hidden>Open report</button>
 </header>
@@ -98,84 +121,171 @@
 <script>
 const SEV = ["low", "medium", "high", "critical"];
 const STATUS_SEV = { created: "critical", compromised: "high", targeted: "medium", involved: "low" };
+const PAGE = 200;
+// Fields offered when scoping a suppression ("all findings of this rule where ...").
+const SCOPE_FIELDS = ["source_image", "process", "parent_process", "target_image", "service_name", "image_path",
+  "task_name", "target_object", "command_line", "event_name", "operation", "user_agent", "actor", "user", "host", "src_ip"];
 const sevColor = s => `var(--${s || "line"})`;
 const $ = (sel, el = document) => el.querySelector(sel);
 // Log content is attacker-controlled: everything rendered goes through esc().
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const time = iso => iso ? iso.slice(11, 19) : "-";
-let current = null, state = { sev: "all", flaggedOnly: true, selected: null };
+let current = null;
+let state = { sev: "all", mode: "flagged", selected: null, suppressFor: null, page: null, q: "" };
+
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+$("#examiner").value = store.get("tv.examiner");
+$("#examiner").onchange = e => store.set("tv.examiner", e.target.value.trim());
+
+function examiner() {
+  const name = $("#examiner").value.trim();
+  if (!name) { $("#examiner").focus(); throw new Error("Enter your examiner name first - it is written to the custody ledger."); }
+  return name;
+}
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
   return r.json();
 }
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+const caseUrl = (suffix = "") => `/api/cases/${encodeURIComponent(current.case.id)}${suffix}`;
 
 async function loadCases(selectId) {
   const cases = await api("/api/cases");
   const box = $("#cases");
   if (!cases.length) {
     box.innerHTML = "";
-    $("#main").innerHTML = `<div class="empty">No cases yet.<br><br>Run <span class="mono">python -m tracevault demo</span> to load the sample breach.</div>`;
+    $("#main").innerHTML = `<div class="empty">No cases yet.<br><br>Run <span class="mono">python -m tracevault demo</span> to load the sample breaches.</div>`;
     return;
   }
   box.innerHTML = cases.map(c => `
     <div class="case-item" data-id="${esc(c.id)}">
       <div class="cid">${esc(c.id)}</div>
       <div class="ct">${esc(c.title)}</div>
-      <div class="muted" style="font-size:12px">${c.risk ? `<span class="sev" style="--c:${sevColor(c.risk.level)}">${esc(c.risk.level)}</span> ${c.risk.score}/100 &middot; ${c.findings} findings` : "not analysed"}</div>
+      <div class="muted" style="font-size:12px">${c.risk ? `<span class="sev" style="--c:${sevColor(c.risk.level)}">${esc(c.risk.level)}</span> ${c.risk.score}/100 &middot; ${c.findings} findings${c.suppressed_findings ? ` &middot; ${c.suppressed_findings} suppressed` : ""}` : "not analysed"}</div>
     </div>`).join("");
   box.querySelectorAll(".case-item").forEach(el => el.onclick = () => openCase(el.dataset.id));
-  openCase(selectId || cases[0].id);
+  await openCase(selectId && cases.some(c => c.id === selectId) ? selectId : cases[0].id);
 }
 
-async function openCase(id) {
+async function openCase(id, keepView = false) {
   document.querySelectorAll(".case-item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
   current = await api(`/api/cases/${encodeURIComponent(id)}`);
-  state.selected = null;
+  if (!keepView) state = { ...state, selected: null, suppressFor: null, mode: "flagged", page: null, q: "" };
+  else state = { ...state, selected: null, suppressFor: null };
   $("#reanalyze").hidden = false;
   $("#report").hidden = !current.analysis;
   render();
 }
 
+async function loadPage(append) {
+  const offset = append && state.page ? state.page.events.length : 0;
+  const r = await api(caseUrl(`/events?offset=${offset}&limit=${PAGE}&q=${encodeURIComponent(state.q)}`));
+  state.page = append && state.page ? { total: r.total, events: state.page.events.concat(r.events) } : { total: r.total, events: r.events };
+  render();
+}
+
+function findingRow(f, idx, eventsById) {
+  const sup = f.suppressed;
+  return `
+    <tr class="finding ${idx === state.selected ? "sel" : ""}" data-idx="${idx}">
+      <td class="mono">${time(f.ts)}</td>
+      <td><span class="sev" style="--c:${sevColor(f.severity)}">${esc(f.severity)}</span></td>
+      <td><b>${esc(f.title)}</b><div class="muted" style="font-size:12px">${esc(f.summary)}</div>
+        ${sup ? `<div class="note"><b>${esc(sup.id)}</b> ${sup.verdict === "false_positive" ? "False positive" : "Expected activity"} &middot; ${esc(sup.reason)} &middot; ${esc(sup.by)}</div>` : ""}</td>
+      <td class="mono">${esc(f.technique)}<div class="muted">${esc(f.tactic)}</div></td>
+      <td>${[...f.entities.hosts, ...f.entities.users, ...f.entities.ips].map(x => `<span class="chip">${esc(x)}</span>`).join("")}</td>
+      <td>${sup ? `<button class="small" data-restore="${esc(sup.id)}">Restore</button>` : `<button class="small" data-suppress="${idx}">Suppress</button>`}</td>
+    </tr>
+    ${state.suppressFor === idx ? `<tr class="form"><td colspan="6">${suppressForm(f, eventsById)}</td></tr>` : ""}`;
+}
+
+function scopeCandidates(f, eventsById) {
+  const ctx = new Set(f.context_event_ids || []);
+  const ev = f.event_ids.map(id => eventsById[id]).find(e => e && !ctx.has(e.id));
+  if (!ev) return [];
+  const value = k => ["host", "user", "src_ip"].includes(k) ? ev[k] : ev.fields[k];
+  return SCOPE_FIELDS.filter(k => value(k) !== null && value(k) !== undefined && value(k) !== "")
+    .map(k => ({ field: k, value: String(value(k)) }));
+}
+
+function suppressForm(f, eventsById) {
+  const cands = scopeCandidates(f, eventsById);
+  return `<form class="supform" id="supform">
+    <div><b>Suppress ${esc(f.rule_id)} &middot; ${esc(f.title)}</b>
+      <div class="note">Recorded in the custody ledger with your name and reason, shown in the report, and reversible.</div></div>
+    <fieldset><legend>Verdict</legend>
+      <label><input type="radio" name="verdict" value="false_positive" checked> False positive &mdash; the rule was wrong</label>
+      <label><input type="radio" name="verdict" value="expected_activity"> Expected activity &mdash; real, but authorized (admin task, pentest)</label>
+    </fieldset>
+    <fieldset><legend>Scope</legend>
+      <label><input type="radio" name="scope" value="finding" checked> Only this finding</label>
+      <label><input type="radio" name="scope" value="where" ${cands.length ? "" : "disabled"}> Every ${esc(f.rule_id)} finding where all checked values match:</label>
+      ${cands.map((c, i) => `<label style="padding-left:24px"><input type="checkbox" name="cond" value="${i}"><span class="cond">${esc(c.field)} = ${esc(c.value)}</span></label>`).join("")}
+    </fieldset>
+    <label style="display:block"><span class="muted" style="font-size:12px">Reason (required)</span>
+      <textarea name="reason" maxlength="2000" placeholder="e.g. Azure VM agent collecting logs; confirmed with cloud team"></textarea></label>
+    <div class="actions"><button type="submit" class="primary small">Suppress &amp; re-analyse</button>
+      <button type="button" class="small" id="supcancel">Cancel</button><span class="err" id="superr"></span></div>
+  </form>`;
+}
+
 function render() {
-  const { case: c, analysis: a, verification: v, ledger } = current;
+  const { case: c, analysis: a, verification: v, ledger, suppressions: sups } = current;
   const main = $("#main");
-  const integrity = `<span class="integrity ${v.ok ? "ok" : "bad"}">${v.ok ? "&#10003; Evidence integrity verified" : "&#9888; Integrity check failed"}</span>`;
+  const checked = v.checked_at ? v.checked_at.replace("T", " ").slice(0, 16) + " UTC" : "";
   const head = `
     <div class="case-head">
       <div><h1>${esc(c.title)}</h1>
         <div class="meta"><span class="mono">${esc(c.id)}</span> &middot; examiner ${esc(c.examiner)} &middot; opened ${esc(c.created_at)}</div></div>
-      <div>${integrity}</div>
+      <div class="verify"><span class="integrity ${v.ok ? "ok" : "bad"}">${v.ok ? "&#10003; Evidence integrity verified" : "&#9888; Integrity check failed"}</span>
+        <span class="when">checked ${esc(checked)}</span><button class="small" id="reverify">Re-verify</button></div>
     </div>`;
   if (!a) {
     main.innerHTML = head + `<div class="card" style="margin-top:16px">${ledger.length} ledger entries. This case has not been analysed yet &mdash; click <b>Re-run analysis</b>.</div>`;
+    bindCommon();
     return;
   }
   const s = a.stats, r = a.risk;
+  const eventsById = Object.fromEntries(a.finding_events.map(e => [e.id, e]));
   const dwell = s.dwell ? `${time(s.dwell[0]).slice(0,5)} &rarr; ${time(s.dwell[1]).slice(0,5)}` : "-";
+  const live = f => !f.suppressed;
   const isAttack = f => (f.category || "attack") === "attack";
-  const findings = a.findings.filter(f => isAttack(f) && (state.sev === "all" || f.severity === state.sev));
-  const posture = a.findings.filter(f => !isAttack(f));
-  const row = f => { const idx = a.findings.indexOf(f); return `
-          <tr class="finding ${idx === state.selected ? "sel" : ""}" data-idx="${idx}">
-            <td class="mono">${time(f.ts)}</td>
-            <td><span class="sev" style="--c:${sevColor(f.severity)}">${esc(f.severity)}</span></td>
-            <td><b>${esc(f.title)}</b><div class="muted" style="font-size:12px">${esc(f.summary)}</div></td>
-            <td class="mono">${esc(f.technique)}<div class="muted">${esc(f.tactic)}</div></td>
-            <td>${[...f.entities.hosts, ...f.entities.users, ...f.entities.ips].map(x => `<span class="chip">${esc(x)}</span>`).join("")}</td>
-          </tr>`; };
+  const indexed = a.findings.map((f, i) => [f, i]);
+  const attack = indexed.filter(([f]) => live(f) && isAttack(f) && (state.sev === "all" || f.severity === state.sev));
+  const posture = indexed.filter(([f]) => live(f) && !isAttack(f));
+  const suppressed = indexed.filter(([f]) => !live(f));
   const sel = state.selected != null ? a.findings[state.selected] : null;
   const hl = new Set(sel ? sel.event_ids : []);
-  const events = a.timeline.filter(e => sel ? hl.has(e.id) : (!state.flaggedOnly || e.rules.length));
+
+  let events, timelineLabel, tools;
+  if (sel) {
+    events = sel.event_ids.map(id => eventsById[id]).filter(Boolean);
+    timelineLabel = `${events.length} evidence events`;
+    tools = `<span>Evidence for <b>${esc(sel.title)}</b></span><button class="small" id="clearSel">Back to timeline</button>`;
+  } else if (state.mode === "all") {
+    events = state.page ? state.page.events : [];
+    timelineLabel = state.page ? `${events.length} of ${state.page.total.toLocaleString()}${state.q ? " matching" : ""} events` : "loading...";
+    tools = `<label><input type="checkbox" id="flagOnly"> Flagged events only</label>
+      <input type="search" id="q" placeholder="Search message, host, user, kind, IP" value="${esc(state.q)}" style="flex:1;min-width:160px">`;
+  } else {
+    events = a.finding_events.filter(e => e.rules.length);
+    timelineLabel = `${events.length} flagged of ${a.timeline_total.toLocaleString()} events`;
+    tools = `<label><input type="checkbox" id="flagOnly" checked> Flagged events only</label>`;
+  }
+  const more = !sel && state.mode === "all" && state.page && events.length < state.page.total;
 
   main.innerHTML = head + `
     <div class="kpis">
       <div class="kpi"><div class="label">Risk score</div><div class="value" style="color:${sevColor(r.level)}">${r.score}<span class="muted" style="font-size:14px">/100</span></div>
         <div class="gauge"><div style="width:${r.score}%;background:${sevColor(r.level)}"></div></div></div>
       <div class="kpi"><div class="label">Findings</div><div class="value">${s.findings}</div>
-        <div class="hint">${SEV.slice().reverse().map(x => `${s.by_severity[x]} ${x}`).join(" &middot; ")}${s.posture_findings ? ` &middot; +${s.posture_findings} posture` : ""}</div></div>
-      <div class="kpi"><div class="label">Events</div><div class="value">${s.events}</div><div class="hint">${s.flagged_events} flagged across ${Object.keys(s.by_source).length} artifacts</div></div>
+        <div class="hint">${SEV.slice().reverse().map(x => `${s.by_severity[x]} ${x}`).join(" &middot; ")}${s.posture_findings ? ` &middot; +${s.posture_findings} posture` : ""}${s.suppressed_findings ? ` &middot; ${s.suppressed_findings} suppressed` : ""}</div></div>
+      <div class="kpi"><div class="label">Events</div><div class="value">${s.events.toLocaleString()}</div><div class="hint">${s.flagged_events} flagged across ${Object.keys(s.by_source).length} artifacts</div></div>
       <div class="kpi"><div class="label">Attacker window (UTC)</div><div class="value" style="font-size:22px">${dwell}</div><div class="hint">${s.dwell ? esc(s.dwell[0].slice(0,10)) : ""}</div></div>
     </div>
 
@@ -204,66 +314,135 @@ function render() {
         </div>`).join("")}</div>
     </div>
 
-    <div class="card"><h2>Findings <span class="count">${findings.length}</span></h2>
+    <div class="card"><h2>Findings <span class="count">${attack.length}</span></h2>
       <div class="tools"><label>Severity <select id="sevFilter">
         ${["all", ...SEV.slice().reverse()].map(x => `<option ${x === state.sev ? "selected" : ""}>${x}</option>`).join("")}
-      </select></label><span class="muted" style="font-size:12px">Click a finding to see its evidence events.</span></div>
+      </select></label><span class="muted" style="font-size:12px">Click a finding to see its evidence. Suppress what you have reviewed as noise.</span></div>
       <div class="scroll"><table>
-        <tr><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th></tr>
-        ${findings.map(row).join("")}
+        <tr class="fhead"><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th><th></th></tr>
+        ${attack.map(([f, i]) => findingRow(f, i, eventsById)).join("") || `<tr><td colspan="6" class="muted">No findings${state.sev !== "all" ? " at this severity" : ""}.</td></tr>`}
       </table></div>
     </div>
 
     ${posture.length ? `<div class="card posture"><h2>Security posture issues <span class="count">${posture.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">Risky practices worth fixing. Not counted as attacker activity, the risk score, IOCs or the attacker window.</div>
+      <div class="note" style="margin-bottom:8px">Risky practices worth fixing. Not counted as attacker activity, the risk score, IOCs or the attacker window.</div>
       <div class="scroll"><table>
-        <tr><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th></tr>
-        ${posture.map(row).join("")}
+        <tr class="fhead"><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th><th></th></tr>
+        ${posture.map(([f, i]) => findingRow(f, i, eventsById)).join("")}
       </table></div>
     </div>` : ""}
 
-    <div class="card"><h2>Super-timeline <span class="count">${events.length} of ${a.timeline.length} events</span></h2>
-      <div class="tools">
-        ${sel ? `<span>Evidence for <b>${esc(sel.title)}</b></span><button id="clearSel">Show all</button>` :
-          `<label><input type="checkbox" id="flagOnly" ${state.flaggedOnly ? "checked" : ""}> Flagged events only</label>`}
-      </div>
+    ${suppressed.length || sups.revoked.length ? `<div class="card suppressed"><h2>Suppressed by analyst <span class="count">${suppressed.length}</span></h2>
+      <div class="note" style="margin-bottom:8px">Excluded from the storyline, risk score, IOCs and identities. Each decision is a custody-ledger entry and appears in the report.</div>
+      ${suppressed.length ? `<div class="scroll"><table>
+        <tr class="fhead"><th>Time</th><th>Severity</th><th>Finding</th><th>ATT&amp;CK</th><th>Entities</th><th></th></tr>
+        ${suppressed.map(([f, i]) => findingRow(f, i, eventsById)).join("")}
+      </table></div>` : ""}
+      ${sups.active.filter(x => !a.findings.some(f => f.suppressed && f.suppressed.id === x.id)).map(x =>
+        `<div class="note"><b>${esc(x.id)}</b> active but currently matches nothing: ${esc(x.reason)}</div>`).join("")}
+      ${sups.revoked.map(x => `<div class="note">Withdrawn <b>${esc(x.id)}</b> by ${esc(x.revoked_by)}: ${esc(x.revoke_reason)}</div>`).join("")}
+    </div>` : ""}
+
+    <div class="card"><h2>Super-timeline <span class="count">${timelineLabel}</span></h2>
+      <div class="tools">${tools}</div>
       <div class="timeline">${events.map(e => `
         <div class="ev ${e.rules.length ? "flag" : ""} ${hl.has(e.id) ? "hl" : ""}">
           <span class="mono">${time(e.ts)}</span>
           <span class="mono src muted" title="${esc(e.source)}">${esc(e.host)}</span>
           <span class="mono kind">${esc(e.kind)}</span>
           <span class="msg">${esc(e.message)} ${e.rules.map(rid => `<span class="chip">${esc(rid)}</span>`).join("")}</span>
-        </div>`).join("")}</div>
+        </div>`).join("") || '<div class="ev"><span></span><span class="muted msg">No events.</span></div>'}</div>
+      ${more ? `<div class="tools" style="margin-top:10px"><button class="small" id="more">Load ${Math.min(PAGE, state.page.total - events.length)} more</button></div>` : ""}
     </div>
 
     <div class="card"><h2>Chain of custody <span class="count">${ledger.length} entries</span></h2>
       <div class="muted" style="font-size:12px">Ledger head <span class="mono">${esc(v.head || "-")}</span></div>
       ${v.problems.length ? `<ul class="problems">${v.problems.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
       <div class="scroll" style="margin-top:10px"><table>
-        <tr><th>#</th><th>Time</th><th>Actor</th><th>Action</th><th>Evidence</th><th>SHA-256</th><th>Status</th></tr>
-        ${ledger.map(e => { const ev = v.evidence.find(x => x.file === e.evidence); return `
+        <tr><th>#</th><th>Time</th><th>Actor</th><th>Action</th><th>Subject</th><th>SHA-256</th><th>Status</th></tr>
+        ${ledger.map(e => { const ev = v.evidence.find(x => x.file === e.evidence); const d = e.details || {};
+          const subject = e.evidence || (d.id ? `${d.id}${d.rule_id ? " " + d.rule_id : ""}${d.reason ? " - " + d.reason : ""}` : "");
+          return `
           <tr><td>${e.seq}</td><td class="mono">${esc(e.ts.replace("T", " ").slice(0, 19))}</td><td>${esc(e.actor)}</td>
-          <td class="mono">${esc(e.action)}</td><td>${esc(e.evidence || "")}</td>
+          <td class="mono">${esc(e.action)}</td><td>${esc(subject)}</td>
           <td class="mono" title="${esc(e.sha256 || "")}">${esc((e.sha256 || "").slice(0, 16))}</td>
           <td>${ev ? (ev.ok ? '<span style="color:var(--ok)">&#10003; match</span>' : '<span style="color:var(--critical)">&#10007; changed</span>') : ""}</td></tr>`; }).join("")}
       </table></div>
     </div>`;
 
+  bindCommon();
   $("#sevFilter").onchange = e => { state.sev = e.target.value; render(); };
-  main.querySelectorAll("tr.finding").forEach(tr => tr.onclick = () => {
+  main.querySelectorAll("tr.finding").forEach(tr => tr.onclick = ev => {
+    if (ev.target.closest("button")) return;
     const idx = Number(tr.dataset.idx);
     state.selected = state.selected === idx ? null : idx;
     render();
   });
-  const flag = $("#flagOnly"); if (flag) flag.onchange = e => { state.flaggedOnly = e.target.checked; render(); };
+  main.querySelectorAll("[data-suppress]").forEach(b => b.onclick = () => {
+    const idx = Number(b.dataset.suppress);
+    state.suppressFor = state.suppressFor === idx ? null : idx;
+    render();
+  });
+  main.querySelectorAll("[data-restore]").forEach(b => b.onclick = () => restore(b.dataset.restore));
+  const flag = $("#flagOnly");
+  if (flag) flag.onchange = e => { state.mode = e.target.checked ? "flagged" : "all"; if (state.mode === "all") loadPage(false).catch(err => alert(err.message)); else render(); };
+  const q = $("#q");
+  if (q) q.onkeydown = e => { if (e.key === "Enter") { state.q = q.value.trim(); loadPage(false).catch(err => alert(err.message)); } };
+  const moreBtn = $("#more"); if (moreBtn) moreBtn.onclick = () => loadPage(true).catch(err => alert(err.message));
   const clear = $("#clearSel"); if (clear) clear.onclick = () => { state.selected = null; render(); };
+  const form = $("#supform");
+  if (form) {
+    const f = a.findings[state.suppressFor];
+    const cands = scopeCandidates(f, eventsById);
+    $("#supcancel").onclick = () => { state.suppressFor = null; render(); };
+    form.querySelectorAll('input[name="cond"]').forEach(cb => cb.onchange = () => { form.querySelector('input[name="scope"][value="where"]').checked = true; });
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const err = $("#superr"); err.textContent = "";
+      const fd = new FormData(form);
+      const body = { rule_id: f.rule_id, verdict: fd.get("verdict"), reason: String(fd.get("reason") || "").trim(), scope: fd.get("scope") };
+      if (body.scope === "finding") body.fingerprints = f.attributed_fps;
+      else body.conditions = fd.getAll("cond").map(i => ({ field: cands[i].field, op: "equals", value: cands[i].value }));
+      try {
+        body.examiner = examiner();
+        if (body.reason.length < 5) throw new Error("Give a reason (at least 5 characters).");
+        if (body.scope === "where" && !body.conditions.length) throw new Error("Tick at least one value to match.");
+        form.querySelector('button[type="submit"]').disabled = true;
+        err.textContent = "Saving and re-analysing...";
+        await post(caseUrl("/suppressions"), body);
+        await loadCases(current.case.id);
+      } catch (x) { err.textContent = x.message; form.querySelector('button[type="submit"]').disabled = false; }
+    };
+  }
 }
 
-$("#report").onclick = () => window.open(`/api/cases/${encodeURIComponent(current.case.id)}/report`, "_blank");
+function bindCommon() {
+  $("#reverify").onclick = async () => {
+    const b = $("#reverify"); b.disabled = true; b.textContent = "Verifying...";
+    try { current.verification = await post(caseUrl("/verify")); render(); }
+    catch (err) { alert(err.message); b.disabled = false; b.textContent = "Re-verify"; }
+  };
+}
+
+async function restore(id) {
+  try {
+    const name = examiner();
+    const reason = prompt(`Why restore ${id}? (recorded in the custody ledger)`);
+    if (reason === null) return;
+    await post(caseUrl(`/suppressions/${encodeURIComponent(id)}/revoke`), { examiner: name, reason });
+    await loadCases(current.case.id);
+  } catch (err) { alert(err.message); }
+}
+
+$("#report").onclick = () => window.open(caseUrl("/report"), "_blank");
 $("#reanalyze").onclick = async () => {
-  const btn = $("#reanalyze"); btn.disabled = true; btn.textContent = "Analysing...";
-  try { await api(`/api/cases/${encodeURIComponent(current.case.id)}/analyze`, { method: "POST" }); await loadCases(current.case.id); }
-  catch (err) { alert(err.message); }
+  const btn = $("#reanalyze");
+  try {
+    const name = examiner();
+    btn.disabled = true; btn.textContent = "Analysing...";
+    await post(caseUrl("/analyze"), { examiner: name });
+    await loadCases(current.case.id);
+  } catch (err) { alert(err.message); }
   finally { btn.disabled = false; btn.textContent = "Re-run analysis"; }
 };
 loadCases().catch(err => { $("#main").innerHTML = `<div class="empty">Failed to load: ${esc(err.message)}</div>`; });

@@ -56,6 +56,7 @@ python -m tracevault anchor IR-2026-014
 | `verify` | Re-check the whole ledger chain and every evidence hash (exit code 2 on failure) |
 | `anchor` | Print the ledger head hash, to timestamp externally (notary, RFC 3161 TSA, blockchain) |
 | `scan` | Triage loose files without a case (`--json` for pipelines; exit 1 if anything fires) |
+| `suppress` / `unsuppress` / `suppressions` | Record, withdraw and list analyst suppressions (custody-logged) |
 | `validate` | Score the rules against public attack datasets (`--fetch` downloads them, hashes verified) |
 | `serve` | Local dashboard on 127.0.0.1 |
 
@@ -108,6 +109,36 @@ Add `"category": "posture"` to a rule for risky practice that isn't proof of com
 root use). Posture findings are listed separately and never feed the attack storyline, risk score,
 IOCs or attacker window.
 
+## Tuning a case: suppressions
+
+Every environment has its own noise. When an analyst reviews a finding and decides it is a
+false positive or authorized activity (an admin task, a pentest), they suppress it in the
+dashboard (the **Suppress** button on each finding) or from the command line:
+
+```bash
+python -m tracevault suppress IR-2026-014 --rule TV-030 --where source_image="C:\WindowsAzure\GuestAgent_2.7\CollectGuestLogs.exe" --reason "Azure VM agent log collection, confirmed with cloud team"
+```
+
+- Scope is either **this finding only** (matched by event fingerprints, so it survives adding
+  evidence) or **every finding of that rule** where chosen field values match.
+- A reason and the examiner's name are required. Each suppression is a `finding.suppress` entry
+  in the hash-chained custody ledger, and is withdrawn with `unsuppress` (also logged), so
+  changing one later breaks verification.
+- Suppressed findings leave the storyline, risk score, IOCs and identities. They stay listed,
+  with who/why/when, in the dashboard and in a "Suppressed by analyst" section of the report.
+
+Suppressions apply to one case. They never change the shared rules in `rules.json`.
+
+## Large cases
+
+The dashboard downloads only the events behind findings. The full timeline is paged and
+searchable on the server (`/api/cases/<id>/events`). Measured on a 59,399-event OTRF case:
+the case opens in about 0.3 s (16 KB instead of 34 MB) and the full timeline view creates about
+1,300 page elements instead of 297,000. Custody verification re-hashes all evidence, so its
+result is cached and shown with a "checked at" time and a **Re-verify** button. Analysis still
+holds every event in memory and in `analysis.json`, so very large cases (millions of events)
+will need a database-backed store.
+
 ## Identities
 
 One person shows up under many names: `priya` in AWS, `priya@acme.io` in Okta and Microsoft 365,
@@ -153,6 +184,7 @@ tracevault/
   analysis.py     risk score, kill chain, IOCs, narrative
   identities.py   cross-system identity linking and status
   validate.py     accuracy scoring against public datasets
+  suppressions.py analyst suppressions, replayed from the custody ledger
 validation/       dataset manifests (tuning + held-out) and RESULTS.md
   custody.py      case workspace + hash-chained custody ledger
   workflow.py     case-level operations used by CLI and server
@@ -167,6 +199,7 @@ docs/             business plan and architecture
 ## Security notes
 
 - The dashboard binds to `127.0.0.1` and has no authentication — do not expose it on a network.
+  The examiner name typed in the dashboard is recorded as given, not verified.
 - All log content is treated as attacker-controlled and HTML-escaped in the report and UI.
 - Case IDs are validated to prevent path traversal.
 - Evidence copies are set read-only; integrity is still enforced by hashes, not file permissions.

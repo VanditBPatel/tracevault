@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from . import __version__, detections, identities
+from . import __version__, detections, identities, suppressions
 from .models import SEVERITY_ORDER, Event, Finding
 
 ATTACK_TACTICS = [
@@ -105,17 +105,23 @@ def narrative(findings: list[Finding], idents: list[dict[str, Any]] | None = Non
 
 
 def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | None = None,
-            identity_map: dict[str, str] | None = None) -> dict[str, Any]:
+            identity_map: dict[str, str] | None = None,
+            active_suppressions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     findings = detections.run(events, rules)
+    # Analyst-reviewed findings are kept in the output (with who/why) but drop out of everything
+    # that describes the attack.
+    suppressed = suppressions.apply(findings, active_suppressions or [])
+    live = [f for i, f in enumerate(findings) if i not in suppressed]
+
     flagged: dict[str, list[str]] = {}
-    for f in findings:
+    for f in live:
         for e in f.events:
             flagged.setdefault(e.id, []).append(f.rule_id)
 
     # Posture findings (risky practice) are reported but do not drive the attack story,
     # the risk score, the IOCs or the attacker window.
-    attack = [f for f in findings if f.category == "attack"]
-    posture = [f for f in findings if f.category != "attack"]
+    attack = [f for f in live if f.category == "attack"]
+    posture = [f for f in live if f.category != "attack"]
     idents = identities.build(attack, identity_map)
 
     score = risk_score(attack)
@@ -133,6 +139,7 @@ def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | N
             "flagged_events": len(flagged),
             "findings": len(attack),
             "posture_findings": len(posture),
+            "suppressed_findings": len(suppressed),
             "identities_compromised": sum(i["status"] == "compromised" for i in idents),
             "by_severity": {s: sev_counts.get(s, 0) for s in SEVERITY_ORDER},
             "by_source": dict(Counter(e.source for e in events)),
@@ -144,7 +151,31 @@ def analyze(events: list[Event], rules: list[dict] | None = None, case: dict | N
         "attack_chain": attack_chain(attack),
         "iocs": iocs(attack),
         "identities": idents,
-        "findings": [f.to_dict() for f in findings],
-        # The full super-timeline, each event tagged with the rules it contributed to.
+        "findings": [
+            {**f.to_dict(),
+             "attributed_fps": sorted({e.fingerprint() for e in f.attributed()}),
+             "suppressed": _suppression_ref(suppressed.get(i))}
+            for i, f in enumerate(findings)
+        ],
+        # The full super-timeline, each event tagged with the (unsuppressed) rules it contributed to.
         "timeline": [{**e.to_dict(), "rules": flagged.get(e.id, [])} for e in events],
+    }
+
+
+def _suppression_ref(s: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not s:
+        return None
+    return {"id": s["id"], "verdict": s["verdict"], "reason": s["reason"], "by": s["by"], "at": s["at"],
+            "scope": suppressions.describe(s)}
+
+
+def summary(result: dict[str, Any]) -> dict[str, Any]:
+    """The few numbers the case list needs, so it never has to load a large analysis.json."""
+    return {
+        "generated_at": result["generated_at"],
+        "risk": result["risk"],
+        "findings": result["stats"]["findings"],
+        "posture_findings": result["stats"]["posture_findings"],
+        "suppressed_findings": result["stats"]["suppressed_findings"],
+        "events": result["stats"]["events"],
     }

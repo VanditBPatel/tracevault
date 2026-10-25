@@ -323,6 +323,172 @@ class ValidationHarnessTests(unittest.TestCase):
         self.assertEqual(len(manifest["datasets"][0]["sha256"]), 64)
 
 
+class SuppressionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.case = Case.create(self.root, "S-1", title="sup", examiner="tester")
+        for f in sorted(SAMPLES.iterdir()):
+            self.case.ingest(f, examiner="tester")
+        self.base = workflow.analyze_case(self.case, examiner="tester", year=2026)
+
+    def tearDown(self):
+        for p in self.case.evidence_files():
+            os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+        self.tmp.cleanup()
+
+    def _scanner(self, result):
+        return next(f for f in result["findings"] if f["rule_id"] == "TV-001")
+
+    def test_rejects_bad_requests(self):
+        from tracevault import suppressions as sup
+        good = {"rule_id": "TV-001", "reason": "authorized scan", "scope": "where",
+                "conditions": [{"field": "src_ip", "op": "equals", "value": "198.51.100.23"}]}
+        sup.validate_request(good)
+        for bad in ({**good, "reason": "no"}, {**good, "rule_id": "X"}, {**good, "scope": "all"},
+                    {**good, "verdict": "meh"}, {**good, "conditions": []},
+                    {**good, "conditions": [{"field": "src_ip", "op": "regex", "value": "("}]},
+                    {**good, "conditions": [{"field": "Bad Field!", "op": "equals", "value": "x"}]},
+                    {"rule_id": "TV-001", "reason": "valid reason", "scope": "finding", "fingerprints": ["zz"]}):
+            with self.assertRaises(Exception):  # ValueError, or re.error for a broken regex
+                sup.validate_request(bad)
+        self.assertEqual([e["action"] for e in self.case.entries()][-1], "report.export")  # nothing logged
+
+    def test_where_suppression_removes_finding_from_the_story(self):
+        entry = workflow.suppress(self.case, {
+            "rule_id": "TV-001", "verdict": "expected_activity", "reason": "authorized pentest scan",
+            "scope": "where", "conditions": [{"field": "src_ip", "op": "equals", "value": "198.51.100.23"}]},
+            examiner="analyst")
+        result = workflow.load_analysis(self.case)
+        self.assertEqual(entry["action"], "finding.suppress")
+        self.assertEqual(result["stats"]["findings"], self.base["stats"]["findings"] - 1)
+        self.assertEqual(result["stats"]["suppressed_findings"], 1)
+        self.assertEqual(self._scanner(result)["suppressed"]["by"], "analyst")
+        self.assertFalse(any(l.startswith("Reconnaissance") for l in result["narrative"]))
+        self.assertNotIn("198.51.100.23", [x["value"] for x in result["iocs"]["ips"]])
+        self.assertIn("authorized pentest scan", (self.case.dir / "report.html").read_text(encoding="utf-8"))
+        self.assertTrue(self.case.verify()["ok"])
+
+    def test_unsuppress_restores_and_is_logged(self):
+        workflow.suppress(self.case, {"rule_id": "TV-001", "reason": "authorized pentest scan", "scope": "where",
+                                      "conditions": [{"field": "src_ip", "op": "equals", "value": "198.51.100.23"}]},
+                          examiner="analyst")
+        with self.assertRaises(ValueError):
+            workflow.unsuppress(self.case, "S9", "no such suppression", examiner="analyst")
+        workflow.unsuppress(self.case, "S1", "scope did not include web-01", examiner="lead")
+        result = workflow.load_analysis(self.case)
+        self.assertEqual(result["stats"]["findings"], self.base["stats"]["findings"])
+        self.assertIsNone(self._scanner(result)["suppressed"])
+        from tracevault import suppressions as sup
+        active, revoked = sup.replay(self.case.entries())
+        self.assertEqual((active, revoked[0]["revoked_by"]), ([], "lead"))
+
+    def test_finding_scope_survives_new_evidence(self):
+        fps = self._scanner(self.base)["attributed_fps"]
+        workflow.suppress(self.case, {"rule_id": "TV-001", "reason": "reviewed: lab scanner",
+                                      "scope": "finding", "fingerprints": fps}, examiner="analyst")
+        # New evidence that sorts first renumbers every event id.
+        extra = self.root / "aaa_early_auth.log"
+        extra.write_text("Oct 20 00:00:01 jump-01 sshd[1]: Accepted publickey for ops from 10.0.0.9 port 1 ssh2\n")
+        self.case.ingest(extra, examiner="analyst")
+        result = workflow.analyze_case(self.case, examiner="analyst", year=2026)
+        self.assertNotEqual(self._scanner(result)["event_ids"], self._scanner(self.base)["event_ids"])
+        self.assertIsNotNone(self._scanner(result)["suppressed"])
+
+    def test_tampering_with_a_suppression_is_detected(self):
+        workflow.suppress(self.case, {"rule_id": "TV-001", "reason": "authorized pentest scan", "scope": "where",
+                                      "conditions": [{"field": "src_ip", "op": "equals", "value": "198.51.100.23"}]},
+                          examiner="analyst")
+        lines = self.case.ledger_path.read_text().splitlines()
+        idx = next(i for i, l in enumerate(lines) if '"finding.suppress"' in l)
+        entry = json.loads(lines[idx])
+        entry["details"]["conditions"][0]["value"] = "203.0.113.45"  # quietly hide the real attacker
+        lines[idx] = json.dumps(entry)
+        self.case.ledger_path.write_text("\n".join(lines) + "\n")
+        self.assertFalse(self.case.verify()["ok"])
+
+
+class ServerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import ThreadingHTTPServer
+        from tracevault.server import make_handler
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        cls.case = Case.create(cls.root, "W-1", title="web", examiner="tester")
+        for f in sorted(SAMPLES.iterdir()):
+            cls.case.ingest(f, examiner="tester")
+        workflow.analyze_case(cls.case, examiner="tester", year=2026)
+        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(cls.root))
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        for p in cls.case.evidence_files():
+            os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+        cls.tmp.cleanup()
+
+    def _req(self, path, body=None):
+        import urllib.error
+        import urllib.request
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(self.base + path, data=data, headers={"Content-Type": "application/json"},
+                                     method="POST" if body is not None else "GET")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_case_list_and_slim_payload(self):
+        status, cases = self._req("/api/cases")
+        self.assertEqual((status, cases[0]["id"], cases[0]["findings"]), (200, "W-1", 19))
+        status, payload = self._req("/api/cases/W-1")
+        a = payload["analysis"]
+        self.assertNotIn("timeline", a)
+        self.assertEqual(a["timeline_total"], 55)
+        needed = {eid for f in a["findings"] for eid in f["event_ids"]}
+        self.assertEqual({e["id"] for e in a["finding_events"]}, needed)
+
+    def test_event_paging_and_search(self):
+        _, page = self._req("/api/cases/W-1/events?offset=10&limit=5")
+        self.assertEqual((page["total"], len(page["events"]), page["events"][0]["id"]), (55, 5, "E00011"))
+        _, hits = self._req("/api/cases/W-1/events?q=shell.php")
+        self.assertEqual(hits["total"], 3)
+        status, _ = self._req("/api/cases/W-1/events?limit=x")
+        self.assertEqual(status, 400)
+
+    def test_suppress_requires_examiner_then_succeeds(self):
+        body = {"rule_id": "TV-012", "reason": "approved backup job change", "scope": "where",
+                "conditions": [{"field": "host", "op": "equals", "value": "web-01"}]}
+        status, err = self._req("/api/cases/W-1/suppressions", body)
+        self.assertEqual(status, 400)
+        self.assertIn("examiner", err["error"])
+        status, ok = self._req("/api/cases/W-1/suppressions", {**body, "examiner": "J. Doe"})
+        self.assertEqual(status, 200)
+        _, payload = self._req("/api/cases/W-1")
+        self.assertEqual(payload["suppressions"]["active"][0]["by"], "J. Doe (dashboard)")
+        status, _ = self._req(f"/api/cases/W-1/suppressions/{ok['suppression']}/revoke",
+                              {"examiner": "J. Doe", "reason": "x"})
+        self.assertEqual(status, 400)  # reason too short
+        status, _ = self._req(f"/api/cases/W-1/suppressions/{ok['suppression']}/revoke",
+                              {"examiner": "J. Doe", "reason": "change was not approved after all"})
+        self.assertEqual(status, 200)
+
+    def test_bad_case_id_and_body(self):
+        self.assertEqual(self._req("/api/cases/..%2Fx")[0], 400)
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(self.base + "/api/cases/W-1/suppressions", data=b"not json", method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req, timeout=10)
+        self.assertEqual(ctx.exception.code, 400)
+
+
 class IdentityTests(unittest.TestCase):
     def test_canonical_auto_linking(self):
         self.assertEqual(identities.canonical("Priya@Acme.io"), "priya")

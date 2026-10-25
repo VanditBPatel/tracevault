@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -28,9 +29,15 @@ class Event:
             return getattr(self, name)
         return self.fields.get(name)
 
+    def fingerprint(self) -> str:
+        """Stable identity of the underlying record. Event ids (E00001...) are renumbered when
+        evidence is added; the fingerprint is not."""
+        return hashlib.sha1(f"{self.source}\n{self.raw}".encode("utf-8")).hexdigest()[:16]
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
+            "fp": self.fingerprint(),
             "ts": self.ts.isoformat(),
             "source": self.source,
             "kind": self.kind,

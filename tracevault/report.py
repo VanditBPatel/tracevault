@@ -14,7 +14,8 @@ def _badge(sev: str | None) -> str:
     return f'<span class="badge" style="background:{SEV_COLORS.get(sev, "#64748b")}">{escape(sev)}</span>'
 
 
-def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: dict[str, Any]) -> str:
+def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: dict[str, Any],
+           revoked: list[dict[str, Any]] | None = None) -> str:
     case = result.get("case", {})
     stats = result["stats"]
     risk = result["risk"]
@@ -31,8 +32,19 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
 
     findings_rows: list[str] = []
     posture_rows: list[str] = []
+    suppressed_rows: list[str] = []
     attack_n = posture_n = 0
     for f in result["findings"]:
+        sup = f.get("suppressed")
+        if sup:
+            verdict = "False positive" if sup["verdict"] == "false_positive" else "Expected activity"
+            suppressed_rows.append(
+                f"<tr><td>{_badge(f['severity'])}</td><td><b>{escape(f['title'])}</b>"
+                f"<div class='muted small'>{escape(f['summary'])}</div></td>"
+                f"<td><b>{escape(sup['id'])}</b> {escape(verdict)}<div class='small'>{escape(sup['reason'])}</div>"
+                f"<div class='muted small'>{escape(sup['scope'])}</div></td>"
+                f"<td>{escape(sup['by'])}<div class='muted small'>{escape(sup['at'])}</div></td></tr>")
+            continue
         if f.get("category", "attack") == "attack":
             attack_n += 1
             label, out = f"F{attack_n:02d}", findings_rows
@@ -125,7 +137,7 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
 
   <div class="kpis">
     <div class="kpi">Risk score<b style="color:{SEV_COLORS[risk["level"]]}">{risk["score"]}/100</b>{_badge(risk["level"])}</div>
-    <div class="kpi">Findings<b>{stats["findings"]}</b>{stats["by_severity"]["critical"]} critical, {stats["by_severity"]["high"]} high, +{stats.get("posture_findings", 0)} posture</div>
+    <div class="kpi">Findings<b>{stats["findings"]}</b>{stats["by_severity"]["critical"]} critical, {stats["by_severity"]["high"]} high, +{stats.get("posture_findings", 0)} posture, {stats.get("suppressed_findings", 0)} suppressed</div>
     <div class="kpi">Events analysed<b>{stats["events"]}</b>{stats["flagged_events"]} flagged</div>
     <div class="kpi">Attacker activity<b style="font-size:15px">{escape(dwell[0][11:16])} &rarr; {escape(dwell[1][11:16])}</b>UTC, {escape(dwell[0][:10])}</div>
   </div>
@@ -151,7 +163,16 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
   <p class="small muted">Risky practices observed in the evidence. Not counted as attacker activity, in the risk score or in the IOCs.</p>
   {"".join(posture_rows) or "<p>None observed.</p>"}
 
-  <h2>7. Evidence integrity &amp; chain of custody</h2>
+  <h2>7. Suppressed by analyst</h2>
+  <p class="small muted">Findings an analyst reviewed and suppressed. They are excluded from sections 1-6.
+  Every suppression and withdrawal is an entry in the custody ledger below.</p>
+  {f'<table><tr><th>Severity</th><th>Finding</th><th>Suppression</th><th>By</th></tr>{"".join(suppressed_rows)}</table>'
+   if suppressed_rows else "<p>None.</p>"}
+  {"".join(f"<p class='small muted'>Withdrawn: <b>{escape(s['id'])}</b> ({escape(s['reason'])}) - "
+           f"withdrawn by {escape(s['revoked_by'])} at {escape(s['revoked_at'])}: {escape(s['revoke_reason'])}</p>"
+           for s in revoked or [])}
+
+  <h2>8. Evidence integrity &amp; chain of custody</h2>
   <p>{integrity}</p>
   <p class="small muted">Ledger head: <code>{escape(verification.get("head") or "-")}</code></p>
   <table><tr><th>#</th><th>Time (UTC)</th><th>Actor</th><th>Action</th><th>Evidence</th><th>SHA-256</th><th>Entry hash</th></tr>{ledger_rows}</table>

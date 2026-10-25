@@ -23,7 +23,7 @@ def _print_summary(result: dict) -> None:
     print(f"\n  Risk score  {r['score']}/100 ({r['level'].upper()})")
     print(f"  Events      {s['events']} analysed, {s['flagged_events']} flagged")
     print(f"  Findings    {s['findings']}  " + "  ".join(f"{k}={v}" for k, v in s["by_severity"].items())
-          + f"   (+{s['posture_findings']} posture)")
+          + f"   (+{s['posture_findings']} posture, {s.get('suppressed_findings', 0)} suppressed)")
     print("\n  Storyline")
     for line in result["narrative"]:
         print(f"   - {line}")
@@ -33,7 +33,7 @@ def _print_summary(result: dict) -> None:
             aliases = f"  aliases: {', '.join(i['aliases'])}" if len(i["aliases"]) > 1 else ""
             print(f"   {i['status']:<11} {i['identity']:<20} {', '.join(i['systems'])}{aliases}")
     for category, label in (("attack", "Findings"), ("posture", "Security posture")):
-        rows = [f for f in result["findings"] if f["category"] == category]
+        rows = [f for f in result["findings"] if f["category"] == category and not f.get("suppressed")]
         if rows:
             print(f"\n  {label}")
         for f in rows:
@@ -93,6 +93,50 @@ def cmd_scan(a: argparse.Namespace) -> int:
     else:
         _print_summary(result)
     return 1 if result["stats"]["findings"] else 0
+
+
+def _conditions(pairs: list[str], op: str) -> list[dict[str, str]]:
+    out = []
+    for pair in pairs or []:
+        field, sep, value = pair.partition("=")
+        if not sep:
+            raise ValueError(f"expected field=value, got {pair!r}")
+        out.append({"field": field.strip(), "op": op, "value": value})
+    return out
+
+
+def cmd_suppress(a: argparse.Namespace) -> int:
+    case = Case.open(a.cases, a.case_id)
+    request: dict = {"rule_id": a.rule, "verdict": a.verdict, "reason": a.reason}
+    if a.finding:
+        analysis_ = workflow.load_analysis(case) or {}
+        match = [f for f in analysis_.get("findings", []) if a.finding in f["event_ids"] and f["rule_id"] == a.rule]
+        if not match:
+            raise ValueError(f"no {a.rule} finding contains event {a.finding}")
+        request.update(scope="finding", fingerprints=match[0]["attributed_fps"])
+    else:
+        request.update(scope="where", conditions=_conditions(a.where, "equals") + _conditions(a.where_regex, "regex"))
+    entry = workflow.suppress(case, request, examiner=a.examiner)
+    print(f"Recorded {entry['details']['id']} in the custody ledger (entry {entry['seq']}) and re-ran analysis.")
+    return 0
+
+
+def cmd_suppressions(a: argparse.Namespace) -> int:
+    from . import suppressions
+    active, revoked = suppressions.replay(Case.open(a.cases, a.case_id).entries())
+    for s in active:
+        print(f"  {s['id']:<4} {s['verdict']:<18} {suppressions.describe(s)}\n       by {s['by']} at {s['at']}: {s['reason']}")
+    for s in revoked:
+        print(f"  {s['id']:<4} WITHDRAWN          {suppressions.describe(s)}\n       by {s['revoked_by']}: {s['revoke_reason']}")
+    if not active and not revoked:
+        print("  No suppressions.")
+    return 0
+
+
+def cmd_unsuppress(a: argparse.Namespace) -> int:
+    workflow.unsuppress(Case.open(a.cases, a.case_id), a.suppression_id, a.reason, examiner=a.examiner)
+    print(f"Withdrew {a.suppression_id} and re-ran analysis.")
+    return 0
 
 
 def cmd_validate(a: argparse.Namespace) -> int:
@@ -174,6 +218,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("files", nargs="+"); sp.add_argument("--year", type=int)
     sp.add_argument("--rules"); sp.add_argument("--json", action="store_true")
     sp.add_argument("--identities", help="identity map JSON {identity: [aliases]}")
+
+    sp = add("suppress", cmd_suppress, "suppress reviewed findings (recorded in the custody ledger)")
+    sp.add_argument("case_id"); sp.add_argument("--rule", required=True, help="rule id, e.g. TV-030")
+    sp.add_argument("--reason", required=True)
+    sp.add_argument("--verdict", choices=["false_positive", "expected_activity"], default="false_positive")
+    sp.add_argument("--finding", metavar="EVENT_ID", help="suppress only the finding containing this event")
+    sp.add_argument("--where", action="append", metavar="FIELD=VALUE", help="exact match (repeatable)")
+    sp.add_argument("--where-regex", action="append", metavar="FIELD=REGEX", help="regex match (repeatable)")
+    sp.add_argument("--examiner")
+
+    sp = add("suppressions", cmd_suppressions, "list a case's suppressions")
+    sp.add_argument("case_id")
+
+    sp = add("unsuppress", cmd_unsuppress, "withdraw a suppression")
+    sp.add_argument("case_id"); sp.add_argument("suppression_id"); sp.add_argument("--reason", required=True)
+    sp.add_argument("--examiner")
 
     sp = add("validate", cmd_validate, "score detection rules against public attack datasets")
     sp.add_argument("--manifest"); sp.add_argument("--data"); sp.add_argument("--rules")
