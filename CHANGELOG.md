@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-10-25
 
 - **Windows evidence collector** (`Collect-TraceVault.ps1`, Windows PowerShell 5.1 and 7):
   exports Security, System and Sysmon for a time window as JSON Lines, with a hash manifest.
@@ -9,6 +9,8 @@
 - **`tracevault ingest-collection`**: verifies every collected file against the manifest
   before ingesting (all or nothing) and records the collection in the custody ledger.
 - **`tracevault collector-script windows`**: writes the collector for copying to a host.
+- Collector manifests are checked the same way on every OS: file names containing `/`, `\` or
+  `:` are rejected (a backslash is not a separator on Linux).
 - Known noise seen on a real laptop: endpoint security suites (for example McAfee) and Store-app
   updates install services repeatedly, so TV-022 fires often. Suppress per case; grouping
   repeated identical installs is a planned improvement.
