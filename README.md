@@ -1,5 +1,7 @@
 # TraceVault
 
+[![tests](https://github.com/VanditBPatel/tracevault/actions/workflows/tests.yml/badge.svg)](https://github.com/VanditBPatel/tracevault/actions/workflows/tests.yml)
+
 **Evidence-first Digital Forensics & Incident Response (DFIR) triage for lean security teams.**
 
 TraceVault takes raw artifacts from a suspected breach — Linux auth logs, web server logs,
