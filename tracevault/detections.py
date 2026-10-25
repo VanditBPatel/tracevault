@@ -3,10 +3,13 @@
 Rules live in JSON (see rules.json) so analysts can read, review and extend them without
 touching code. Three rule types are supported:
 
-  match        one event satisfies the conditions
-  threshold    N matching events from the same entity, each within `window` seconds of the last
-  followed_by  a `first` burst (min_count events) and then a `then` event from the same entity
-               within `window` seconds of the burst ending
+  match         one event satisfies the conditions
+  threshold     N matching events from the same entity, each within `window` seconds of the last
+                (with "distinct": "<field>", N distinct values of that field instead - e.g. spraying)
+  followed_by   a `first` burst (min_count events) and then a `then` event from the same entity
+                within `window` seconds of the burst ending
+  field_change  consecutive matching events from the same entity whose `field` differs, less than
+                `window` seconds apart (e.g. logins from two countries)
 
 Conditions (`where`) map a field name to either a case-insensitive regex string or a
 comparison object such as {"gt": 10000000} / {"lt": 400} / {"eq": 4625}.
@@ -96,7 +99,8 @@ def is_internal_ip(value: Any) -> bool:
     return any(addr in net for net in INTERNAL_NETS if net.version == addr.version)
 
 
-def _finding(rule: dict, evs: list[Event], summary: str, key: Any = None) -> Finding:
+def _finding(rule: dict, evs: list[Event], summary: str, key: Any = None,
+             at: Event | None = None) -> Finding:
     # The same behaviour means something different from inside the network: a brute-forced
     # login from an internal host is lateral movement, not initial access.
     tactic = rule["tactic"]
@@ -105,7 +109,7 @@ def _finding(rule: dict, evs: list[Event], summary: str, key: Any = None) -> Fin
     return Finding(
         rule_id=rule["id"], title=rule["title"], severity=rule["severity"], tactic=tactic,
         technique=rule["technique"], technique_name=rule.get("technique_name", ""),
-        description=rule.get("description", ""), summary=summary, ts=evs[0].ts, events=evs,
+        description=rule.get("description", ""), summary=summary, ts=(at or evs[0]).ts, events=evs,
     )
 
 
@@ -123,12 +127,32 @@ def run_rule(rule: dict, events: list[Event]) -> list[Finding]:
         out = []
         for key, evs in _grouped(events, rule["match"], rule["group_by"]).items():
             for burst in _bursts(evs, rule["window"]):
-                if len(burst) >= rule["count"]:
+                distinct = rule.get("distinct")
+                size = len({e.get(distinct) for e in burst} - {None}) if distinct else len(burst)
+                if size >= rule["count"]:
                     users = sorted({e.user for e in burst if e.user})
-                    target = f" targeting {', '.join(users)}" if users else ""
+                    if len(users) > 3:
+                        target = f" targeting {len(users)} accounts"
+                    else:
+                        target = f" targeting {', '.join(users)}" if users else ""
+                    kind = rule["match"].get("kind", "events")
+                    kind = "/".join(kind) if isinstance(kind, list) else kind
                     out.append(_finding(rule, burst,
-                        f"{len(burst)} {rule['match'].get('kind', 'events')} from {key}{target} "
+                        f"{len(burst)} {kind} by {key}{target} "
                         f"on {', '.join(sorted({e.host for e in burst}))} ({_span(burst)})", key))
+        return out
+
+    if rtype == "field_change":
+        fld, window = rule["field"], rule["window"]
+        out = []
+        for key, evs in _grouped(events, rule["match"], rule["group_by"]).items():
+            evs = [e for e in evs if e.get(fld)]
+            for prev, cur in zip(evs, evs[1:]):
+                gap = (cur.ts - prev.ts).total_seconds()
+                if prev.get(fld) != cur.get(fld) and gap <= window:
+                    out.append(_finding(rule, [prev, cur],
+                        f"{key}: {fld} {prev.get(fld)} ({prev.src_ip or '?'}) -> {cur.get(fld)} "
+                        f"({cur.src_ip or '?'}) {round(gap / 60)} min apart", key, at=cur))
         return out
 
     if rtype == "followed_by":

@@ -105,8 +105,8 @@ insurers, and **MSP distribution**.
 
 | Phase | Timeline **[validate]** | Milestones |
 |---|---|---|
-| **MVP (this repo)** | Now | Linux/web/Windows log parsing, 14 rules, custody ledger, report, dashboard |
-| **v0.2 Collect** | +3 months | Native EVTX parsing, live-response collector scripts, cloud logs (AWS CloudTrail, Microsoft 365, Okta) |
+| **MVP (this repo)** | Now | Linux/web/Windows logs plus AWS CloudTrail, Microsoft 365 and Okta; 29 rules incl. MFA fatigue, impossible travel, BEC forwarding rules, cloud log tampering; custody ledger, report, dashboard |
+| **v0.2 Collect** | +3 months | Native EVTX parsing, live-response collector scripts, Google Workspace, Entra ID sign-in logs, GCP/Azure activity logs |
 | **v0.3 Correlate** | +6 months | Sigma rule import, entity graph, IOC enrichment (threat intel feeds), YARA on files |
 | **v1.0 Platform** | +9–12 months | Multi-tenant MSP console, team collaboration, public anchoring service, insurer claims export |
 | **v1.x Assist** | +12–18 months | LLM co-pilot that *drafts* report sections strictly grounded in findings, with every claim cited to evidence IDs |

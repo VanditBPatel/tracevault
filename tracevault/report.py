@@ -57,7 +57,7 @@ def render(result: dict[str, Any], ledger: list[dict[str, Any]], verification: d
         f"<tr><td>Account</td><td><code>{escape(x['value'])}</code></td><td></td><td>{x['findings']}</td></tr>"
         for x in result["iocs"]["users"]
     ) + "".join(
-        f"<tr><td>Host</td><td><code>{escape(x['value'])}</code></td><td></td><td>{x['findings']}</td></tr>"
+        f"<tr><td>Host / tenant</td><td><code>{escape(x['value'])}</code></td><td></td><td>{x['findings']}</td></tr>"
         for x in result["iocs"]["hosts"]
     )
 

@@ -2,17 +2,22 @@
 
 Supported formats (auto-detected from content):
   * syslog / auth.log  - classic "Oct 21 02:10:01 host prog[pid]: msg" and RFC 5424-ish ISO stamps
-  * winevt             - Windows event log exported as JSON Lines (one event object per line)
+  * winevt             - Windows event log exported as JSON Lines or a JSON array
   * web                - Apache / Nginx combined access log
+  * cloudtrail         - AWS CloudTrail ({"Records": [...]}, JSON array or JSON Lines)
+  * m365               - Microsoft 365 unified audit log (Purview CSV export or AuditData JSON)
+  * okta               - Okta System Log (API JSON array or JSON Lines)
 """
 
 from __future__ import annotations
 
+import csv
+import ipaddress
 import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import unquote_plus
 
 from .models import Event
@@ -55,7 +60,7 @@ def parse_syslog(path: Path, year: int | None = None) -> list[Event]:
     for line in _lines(path):
         m = SYSLOG_ISO_RE.match(line)
         if m:
-            ts = _to_utc(datetime.fromisoformat(m["iso"].replace("Z", "+00:00")))
+            ts = _iso(m["iso"])
         else:
             m = SYSLOG_RE.match(line)
             if not m:
@@ -96,18 +101,18 @@ WIN_EVENT_KINDS = {
     1102: "log.cleared",
 }
 
+_MS_DATE_RE = re.compile(r"/Date\((-?\d+)\)/")  # ConvertTo-Json renders DateTime as /Date(ms)/
+
 
 def parse_winevt(path: Path) -> list[Event]:
-    """Parse Windows events exported as JSON Lines (e.g. Get-WinEvent | ConvertTo-Json -Compress)."""
+    """Parse Windows events exported as JSON (e.g. Get-WinEvent ... | ConvertTo-Json)."""
     events: list[Event] = []
-    for line in _lines(path):
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        event_id = int(rec.get("EventID", 0))
+    for rec in _json_records(path) or []:
+        event_id = int(rec.get("EventID", rec.get("Id", 0)))
         kind = WIN_EVENT_KINDS.get(event_id, f"win.{event_id}")
-        ts = _to_utc(datetime.fromisoformat(str(rec["TimeCreated"]).replace("Z", "+00:00")))
+        created = str(rec["TimeCreated"])
+        ms = _MS_DATE_RE.search(created)
+        ts = datetime.fromtimestamp(int(ms[1]) / 1000, tz=timezone.utc) if ms else _iso(created)
 
         user = rec.get("TargetUserName")
         fields: dict = {"event_id": event_id}
@@ -129,7 +134,7 @@ def parse_winevt(path: Path) -> list[Event]:
 
         events.append(Event(ts=ts, source=path.name, kind=kind, host=rec.get("Computer", "unknown"),
                             message=rec.get("Message") or _win_message(event_id, user, fields),
-                            raw=line, user=user, src_ip=src_ip, fields=fields))
+                            raw=json.dumps(rec), user=user, src_ip=src_ip, fields=fields))
     return events
 
 
@@ -180,25 +185,206 @@ def parse_web(path: Path) -> list[Event]:
     return events
 
 
+# --------------------------------------------------------------------------- AWS CloudTrail
+
+def parse_cloudtrail(path: Path) -> list[Event]:
+    """Parse AWS CloudTrail records. Host is "aws:<account id>"."""
+    events: list[Event] = []
+    for rec in _json_records(path) or []:
+        ident = rec.get("userIdentity") or {}
+        user_type = ident.get("type")
+        issuer = (ident.get("sessionContext") or {}).get("sessionIssuer") or {}
+        user = (ident.get("userName") or issuer.get("userName")
+                or (ident.get("arn") or "").rsplit("/", 1)[-1] or None)
+        if user_type == "Root":
+            user = "root"
+
+        name = rec.get("eventName", "")
+        error = rec.get("errorCode") or ""
+        request = rec.get("requestParameters") or {}
+        fields: dict[str, Any] = {
+            "event_name": name,
+            "event_source": rec.get("eventSource"),
+            "region": rec.get("awsRegion"),
+            "user_type": user_type,
+            "user_agent": rec.get("userAgent", ""),
+            "error_code": error,
+            "request": json.dumps(request, sort_keys=True),
+        }
+        if ident.get("accessKeyId"):
+            fields["access_key"] = ident["accessKeyId"]
+
+        if name == "ConsoleLogin":
+            ok = (rec.get("responseElements") or {}).get("ConsoleLogin") == "Success"
+            kind = "auth.success" if ok else "auth.failure"
+            fields["mfa_used"] = (rec.get("additionalEventData") or {}).get("MFAUsed")
+        elif "AccessDenied" in error or "UnauthorizedOperation" in error:
+            kind = "cloud.denied"
+        else:
+            kind = "cloud.api"
+
+        src_ip = _clean_ip(rec.get("sourceIPAddress"))
+        if src_ip is None and rec.get("sourceIPAddress"):
+            fields["source_service"] = rec["sourceIPAddress"]  # e.g. "ec2.amazonaws.com"
+
+        summary = ", ".join(f"{k}={_short(v)}" for k, v in list(request.items())[:3])
+        message = f"{name}{f' ({summary})' if summary else ''} by {user or '?'}"
+        if kind.startswith("auth."):
+            message = f"Console login {'succeeded' if kind == 'auth.success' else 'failed'} for {user} (MFA: {fields['mfa_used'] or '?'})"
+        if error:
+            message += f" -> {error}"
+
+        account = rec.get("recipientAccountId") or ident.get("accountId") or "unknown"
+        events.append(Event(ts=_iso(rec["eventTime"]), source=path.name, kind=kind, host=f"aws:{account}",
+                            message=message, raw=json.dumps(rec), user=user, src_ip=src_ip, fields=fields))
+    return events
+
+
+# --------------------------------------------------------------------------- Microsoft 365
+
+M365_KINDS = {"UserLoggedIn": "auth.success", "UserLoginFailed": "auth.failure"}
+
+
+def parse_m365(path: Path) -> list[Event]:
+    """Parse the Microsoft 365 unified audit log (Purview CSV export, or the AuditData JSON)."""
+    events: list[Event] = []
+    for rec in _m365_records(path):
+        op = rec.get("Operation", "")
+        params = {p["Name"]: str(p.get("Value", "")) for p in rec.get("Parameters") or []
+                  if isinstance(p, dict) and "Name" in p}
+        param_str = "; ".join(f"{k}={v}" for k, v in params.items())
+        fields = {
+            "operation": op,
+            "workload": rec.get("Workload"),
+            "result": rec.get("ResultStatus"),
+            "object": rec.get("ObjectId"),
+            "parameters": param_str,
+            "user_agent": _m365_extended(rec, "UserAgent") or "",
+        }
+        target = rec.get("ObjectId") or ""
+        message = f"{op}{f' {target}' if target else ''}{f' [{param_str}]' if param_str else ''}"
+        events.append(Event(ts=_iso(rec["CreationTime"]), source=path.name,
+                            kind=M365_KINDS.get(op, "saas.activity"), host="m365", message=message,
+                            raw=json.dumps(rec), user=rec.get("UserId"),
+                            src_ip=_clean_ip(rec.get("ClientIP") or rec.get("ClientIPAddress")),
+                            fields=fields))
+    return events
+
+
+def _m365_records(path: Path) -> list[dict]:
+    first = next(iter(_lines(path)), "")
+    if first.lstrip()[:1] in "[{":
+        records = _json_records(path) or []
+    else:  # Purview export: CSV whose AuditData column holds the JSON record
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            records = [row for row in csv.DictReader(fh)]
+    out = []
+    for rec in records:
+        audit = rec.get("AuditData")
+        if isinstance(audit, str):
+            try:
+                rec = json.loads(audit)
+            except json.JSONDecodeError:
+                continue
+        elif isinstance(audit, dict):
+            rec = audit
+        if isinstance(rec, dict) and "CreationTime" in rec:
+            out.append(rec)
+    return out
+
+
+def _m365_extended(rec: dict, name: str) -> str | None:
+    for prop in rec.get("ExtendedProperties") or []:
+        if isinstance(prop, dict) and prop.get("Name") == name:
+            return prop.get("Value")
+    return None
+
+
+# --------------------------------------------------------------------------- Okta
+
+OKTA_KINDS = {
+    "user.mfa.okta_verify.deny_push": "mfa.deny",
+    "system.push.send_factor_verify_push": "mfa.push",
+}
+
+
+def parse_okta(path: Path) -> list[Event]:
+    """Parse the Okta System Log (GET /api/v1/logs output)."""
+    events: list[Event] = []
+    for rec in _json_records(path) or []:
+        event_type = rec.get("eventType", "")
+        outcome = rec.get("outcome") or {}
+        actor = rec.get("actor") or {}
+        client = rec.get("client") or {}
+        geo = client.get("geographicalContext") or {}
+        result = outcome.get("result")
+
+        if event_type == "user.session.start":
+            kind = "auth.success" if result == "SUCCESS" else "auth.failure"
+        else:
+            kind = OKTA_KINDS.get(event_type, "saas.activity")
+
+        targets = "; ".join(t.get("alternateId") or t.get("displayName") or ""
+                            for t in rec.get("target") or [] if isinstance(t, dict))
+        fields = {
+            "event_type": event_type,
+            "outcome": result,
+            "reason": outcome.get("reason"),
+            "country": geo.get("country"),
+            "city": geo.get("city"),
+            "user_agent": (client.get("userAgent") or {}).get("rawUserAgent", ""),
+            "targets": targets,
+        }
+        place = ", ".join(x for x in (geo.get("city"), geo.get("country")) if x)
+        message = f"{rec.get('displayMessage') or event_type}: {result or '-'}"
+        if outcome.get("reason"):
+            message += f" - {outcome['reason']}"
+        if place:
+            message += f" from {place}"
+        events.append(Event(ts=_iso(rec["published"]), source=path.name, kind=kind, host="okta",
+                            message=message, raw=json.dumps(rec), user=actor.get("alternateId"),
+                            src_ip=_clean_ip(client.get("ipAddress")), fields=fields))
+    return events
+
+
 # --------------------------------------------------------------------------- dispatch
 
 PARSERS: dict[str, Callable[..., list[Event]]] = {
     "syslog": parse_syslog,
     "winevt": parse_winevt,
     "web": parse_web,
+    "cloudtrail": parse_cloudtrail,
+    "m365": parse_m365,
+    "okta": parse_okta,
 }
 
 
+def _classify_json(rec: dict) -> str | None:
+    if "eventVersion" in rec or ("eventSource" in rec and "eventName" in rec):
+        return "cloudtrail"
+    if "eventType" in rec and "published" in rec:
+        return "okta"
+    if "AuditData" in rec or ("Operation" in rec and "CreationTime" in rec):
+        return "m365"
+    if "TimeCreated" in rec and ("EventID" in rec or "Id" in rec):
+        return "winevt"
+    return None
+
+
 def detect_format(path: Path) -> str | None:
-    """Sniff the first meaningful line to pick a parser."""
-    for line in _lines(path):
-        if line.startswith("{"):
-            return "winevt"
-        if WEB_RE.match(line):
-            return "web"
-        if SYSLOG_RE.match(line) or SYSLOG_ISO_RE.match(line):
-            return "syslog"
+    """Sniff the content to pick a parser."""
+    first = next(iter(_lines(path)), None)
+    if first is None:
         return None
+    if first.lstrip()[:1] in "[{":
+        records = _json_records(path)
+        return _classify_json(records[0]) if records else None
+    if "AuditData" in first and "," in first:
+        return "m365"
+    if WEB_RE.match(first):
+        return "web"
+    if SYSLOG_RE.match(first) or SYSLOG_ISO_RE.match(first):
+        return "syslog"
     return None
 
 
@@ -222,12 +408,57 @@ def parse_files(paths: Iterable[Path], year: int | None = None) -> list[Event]:
     return events
 
 
+# --------------------------------------------------------------------------- helpers
+
 def _lines(path: Path) -> Iterable[str]:
-    with open(path, encoding="utf-8", errors="replace") as fh:
+    with open(path, encoding="utf-8-sig", errors="replace") as fh:
         for line in fh:
             line = line.rstrip("\r\n")
             if line.strip():
                 yield line
+
+
+def _json_records(path: Path) -> list[dict] | None:
+    """Load a JSON document ({"Records": [...]}, an array, or one object) or JSON Lines."""
+    text = Path(path).read_text(encoding="utf-8-sig", errors="replace").strip()
+    if not text or text[0] not in "[{":
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = []
+        for line in text.splitlines():
+            try:
+                data.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    if isinstance(data, dict):
+        data = data["Records"] if isinstance(data.get("Records"), list) else [data]
+    return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else None
+
+
+def _clean_ip(value: Any) -> str | None:
+    """Normalize "1.2.3.4", "1.2.3.4:5678" or "[::1]:443"; anything else (service names) -> None."""
+    if not value:
+        return None
+    s = str(value).strip()
+    if s.startswith("["):
+        s = s[1:s.find("]")]
+    elif s.count(":") == 1:
+        s = s.split(":", 1)[0]
+    try:
+        return str(ipaddress.ip_address(s))
+    except ValueError:
+        return None
+
+
+def _short(value: Any, limit: int = 60) -> str:
+    s = value if isinstance(value, str) else json.dumps(value)
+    return s if len(s) <= limit else s[: limit - 3] + "..."
+
+
+def _iso(value: str) -> datetime:
+    return _to_utc(datetime.fromisoformat(str(value).replace("Z", "+00:00")))
 
 
 def _to_utc(dt: datetime) -> datetime:

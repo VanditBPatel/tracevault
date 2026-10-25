@@ -13,10 +13,15 @@ from tracevault import analysis, detections, parsers, workflow  # noqa: E402
 from tracevault.custody import Case  # noqa: E402
 
 SAMPLES = ROOT / "samples" / "case-001"
+CLOUD = ROOT / "samples" / "case-002"
 
 
 def sample_events():
     return parsers.parse_files(sorted(SAMPLES.iterdir()), year=2026)
+
+
+def cloud_events():
+    return parsers.parse_files(sorted(CLOUD.iterdir()))
 
 
 class ParserTests(unittest.TestCase):
@@ -93,6 +98,96 @@ class DetectionTests(unittest.TestCase):
     def test_unknown_rule_type_rejected(self):
         with self.assertRaises(ValueError):
             detections.run_rule({"id": "X", "type": "nope"}, [])
+
+
+class CloudParserTests(unittest.TestCase):
+    def test_formats_are_detected(self):
+        self.assertEqual(parsers.detect_format(CLOUD / "aws_cloudtrail.json"), "cloudtrail")
+        self.assertEqual(parsers.detect_format(CLOUD / "m365_audit.jsonl"), "m365")
+        self.assertEqual(parsers.detect_format(CLOUD / "okta_system_log.json"), "okta")
+
+    def test_cloudtrail_normalization(self):
+        events = parsers.parse_cloudtrail(CLOUD / "aws_cloudtrail.json")
+        root = events[0]
+        self.assertEqual((root.kind, root.user, root.host), ("auth.success", "root", "aws:111122223333"))
+        login = next(e for e in events if e.user == "priya" and e.kind == "auth.success")
+        self.assertEqual(login.fields["mfa_used"], "No")
+        denied = [e for e in events if e.kind == "cloud.denied"]
+        self.assertEqual(len(denied), 6)  # AccessDenied, AccessDeniedException and UnauthorizedOperation
+
+    def test_m365_ip_port_stripped_and_params_flattened(self):
+        events = parsers.parse_m365(CLOUD / "m365_audit.jsonl")
+        login = next(e for e in events if e.user == "priya@acme.io" and e.kind == "auth.success")
+        self.assertEqual(login.src_ip, "203.0.113.80")
+        rule = next(e for e in events if e.fields["operation"] == "New-InboxRule")
+        self.assertIn("ForwardTo=invoices@acme-billing.example", rule.fields["parameters"])
+
+    def test_m365_purview_csv_export(self):
+        import csv
+        record = json.loads((CLOUD / "m365_audit.jsonl").read_text().splitlines()[3])
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "audit_export.csv"
+            with open(p, "w", newline="", encoding="utf-8-sig") as fh:
+                w = csv.writer(fh)
+                w.writerow(["RecordId", "CreationDate", "RecordType", "Operation", "UserId", "AuditData"])
+                w.writerow(["1", "2026-10-22T09:14:05", "ExchangeAdmin", "New-InboxRule", "priya@acme.io", json.dumps(record)])
+            self.assertEqual(parsers.detect_format(p), "m365")
+            (e,) = parsers.parse_file(p)
+            self.assertEqual(e.fields["operation"], "New-InboxRule")
+
+    def test_okta_mfa_kinds_and_geo(self):
+        events = parsers.parse_okta(CLOUD / "okta_system_log.json")
+        kinds = [e.kind for e in events]
+        self.assertEqual(kinds.count("mfa.push"), 6)
+        self.assertEqual(kinds.count("mfa.deny"), 4)
+        last = [e for e in events if e.kind == "auth.success" and e.user == "priya@acme.io"][-1]
+        self.assertEqual(last.fields["country"], "Netherlands")
+
+    def test_clean_ip(self):
+        self.assertEqual(parsers._clean_ip("1.2.3.4:5678"), "1.2.3.4")
+        self.assertEqual(parsers._clean_ip("[2001:db8::1]:443"), "2001:db8::1")
+        self.assertEqual(parsers._clean_ip("2001:db8::1"), "2001:db8::1")
+        self.assertIsNone(parsers._clean_ip("ec2.amazonaws.com"))
+
+
+class CloudDetectionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.findings = detections.run(cloud_events())
+        cls.ids = [f.rule_id for f in cls.findings]
+
+    def test_expected_rules_fire(self):
+        for rid in ["TV-100", "TV-101", "TV-102", "TV-200", "TV-201", "TV-202", "TV-203", "TV-204",
+                    "TV-205", "TV-206", "TV-207", "TV-210", "TV-211", "TV-212", "TV-213", "TV-214"]:
+            self.assertIn(rid, self.ids, rid)
+
+    def test_benign_lookalikes_not_flagged(self):
+        # marcus's newsletter inbox rule and deploy-bot's CloudFront-only bucket policy are fine
+        self.assertEqual(self.ids.count("TV-210"), 1)
+        self.assertEqual(self.ids.count("TV-207"), 1)
+        for f in self.findings:
+            self.assertNotIn("deploy-bot", f.entities()["users"], f.title)
+            if f.rule_id != "TV-102" and f.rule_id != "TV-100" and f.rule_id != "TV-101":
+                self.assertNotIn("marcus@acme.io", f.entities()["users"], f.title)
+
+    def test_spray_counts_distinct_accounts(self):
+        spray = next(f for f in self.findings if f.rule_id == "TV-102")
+        self.assertEqual(len(spray.entities()["users"]), 6)
+        self.assertIn("6 accounts", spray.summary)
+
+    def test_impossible_travel(self):
+        travel = next(f for f in self.findings if f.rule_id == "TV-214")
+        self.assertEqual([e.fields["country"] for e in travel.events], ["United States", "Netherlands"])
+        self.assertEqual(travel.ts, travel.events[-1].ts)  # dated at the suspicious login
+
+    def test_mfa_fatigue_links_denials_to_login(self):
+        f = next(f for f in self.findings if f.rule_id == "TV-213")
+        self.assertEqual([e.kind for e in f.events], ["mfa.deny"] * 4 + ["auth.success"])
+
+    def test_spray_not_triggered_by_one_user_failing(self):
+        rule = next(r for r in detections.load_rules() if r["id"] == "TV-102")
+        events = [e for e in sample_events() if e.src_ip == "10.0.0.15"]  # 6 failures, 1 account
+        self.assertEqual(detections.run_rule(rule, events), [])
 
 
 class AnalysisTests(unittest.TestCase):

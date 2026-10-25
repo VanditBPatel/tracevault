@@ -3,7 +3,8 @@
 **Evidence-first Digital Forensics & Incident Response (DFIR) triage for lean security teams.**
 
 TraceVault takes raw artifacts from a suspected breach — Linux auth logs, web server logs,
-Windows event logs — and in seconds produces:
+Windows event logs, and the cloud/SaaS logs where startup breaches usually happen (AWS CloudTrail,
+Microsoft 365, Okta) — and in seconds produces:
 
 - a **super-timeline** merging every artifact into one UTC-normalized sequence
 - **explainable detections** mapped to MITRE ATT&CK, each linked to the exact evidence events
@@ -27,9 +28,15 @@ python -m tracevault demo
 python -m tracevault serve
 ```
 
-Then open http://127.0.0.1:8765. The demo loads a realistic sample breach (`samples/case-001`):
-an SSH brute force on a web server, a root shell, web-shell upload, lateral movement to a finance
-workstation, LSASS credential dumping, persistence, data exfiltration and log clearing.
+Then open http://127.0.0.1:8765. The demo loads two realistic sample breaches:
+
+- **CASE-001** (`samples/case-001`, on-prem): SSH brute force on a web server, root shell,
+  web-shell upload, lateral movement to a finance workstation, LSASS credential dumping,
+  persistence, data exfiltration and log clearing.
+- **CASE-002** (`samples/case-002`, cloud identity): Okta password spray, MFA push bombing until
+  the user approves, login from a second country, a hidden mailbox forwarding rule and OAuth app
+  consent in Microsoft 365, then in AWS: recon, a backdoor IAM user with admin rights, a customer
+  data bucket made public, and CloudTrail switched off.
 
 ## Working a real case
 
@@ -59,18 +66,29 @@ All commands accept `--cases <dir>` (default `./cases`).
 |---|---|---|
 | Linux syslog / `auth.log` (classic or ISO timestamps) | copy `/var/log/auth.log`, `/var/log/secure` | content |
 | Apache / Nginx combined access log | name it `<host>_access.log` to tag the host | content |
-| Windows event log as JSON Lines | `Get-WinEvent -LogName Security \| Select TimeCreated,Id,... \| ConvertTo-Json -Compress` per line | content (`{` first char) |
+| Windows event log as JSON (array or JSON Lines) | `Get-WinEvent -LogName Security \| Select TimeCreated,Id,... \| ConvertTo-Json` | JSON keys |
+| AWS CloudTrail | S3 log objects (`{"Records": [...]}`), CloudTrail Lake / Athena JSON | JSON keys |
+| Microsoft 365 unified audit log | Purview → Audit → Export (CSV with `AuditData` column), or `Search-UnifiedAuditLog` AuditData JSON | CSV header / JSON keys |
+| Okta System Log | `GET /api/v1/logs` output (JSON array or JSON Lines) | JSON keys |
 
 Windows events understood: 4624, 4625, 4688, 4698, 4720, 4732, 7045, 1102.
+
+Cloud events are normalized into the same model as everything else: sign-ins become
+`auth.success` / `auth.failure` (so brute-force rules work across Okta, M365, AWS and SSH alike),
+denied AWS calls become `cloud.denied`, Okta MFA pushes and rejections become `mfa.push` / `mfa.deny`.
+The "host" of a cloud event is its tenant: `aws:<account-id>`, `m365`, `okta`.
 
 ## Detection rules
 
 Rules live in [tracevault/rules.json](tracevault/rules.json) — readable by analysts and reviewable
-in a pull request. Three rule types:
+in a pull request. 29 rules ship today (14 host/web, 15 cloud/identity). Four rule types:
 
-- `match` — one event meets the conditions (e.g. encoded PowerShell)
-- `threshold` — N events from one entity in a burst (e.g. password brute force)
-- `followed_by` — a burst then a follow-up event from the same entity (e.g. brute force → successful login)
+- `match` — one event meets the conditions (e.g. encoded PowerShell, CloudTrail stopped)
+- `threshold` — N events from one entity in a burst (e.g. password brute force); add
+  `"distinct": "user"` to count different accounts instead (password spraying)
+- `followed_by` — a burst then a follow-up event from the same entity (e.g. MFA denials → successful login)
+- `field_change` — a field changes between consecutive events within a window (e.g. logins from
+  two countries — impossible travel)
 
 Conditions are case-insensitive regexes or numeric comparisons (`{"gt": 10000000}`). Use your
 own rule pack with `--rules my-rules.json`.

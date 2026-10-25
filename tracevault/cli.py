@@ -10,7 +10,11 @@ from pathlib import Path
 from . import __version__, analysis, detections, parsers, workflow
 from .custody import Case
 
-SAMPLES = Path(__file__).resolve().parent.parent / "samples" / "case-001"
+SAMPLES = Path(__file__).resolve().parent.parent / "samples"
+SAMPLE_CASES = {
+    "CASE-001": ("case-001", "Acme Labs - web server and finance workstation compromise"),
+    "CASE-002": ("case-002", "Acme Labs - cloud identity takeover (Okta, Microsoft 365, AWS)"),
+}
 SEV_TAG = {"low": "LOW ", "medium": "MED ", "high": "HIGH", "critical": "CRIT"}
 
 
@@ -88,22 +92,23 @@ def cmd_serve(a: argparse.Namespace) -> int:
 
 
 def cmd_demo(a: argparse.Namespace) -> int:
-    """Build the bundled sample breach as a full case and analyse it."""
-    case_id = a.case_id
-    try:
-        case = Case.create(a.cases, case_id, title="Acme Labs - web server and finance workstation compromise",
-                           examiner=a.examiner or "demo-examiner")
-    except FileExistsError:
-        print(f"Case {case_id} already exists - re-running analysis.")
-        case = Case.open(a.cases, case_id)
-    else:
-        for f in sorted(SAMPLES.iterdir()):
-            entry = case.ingest(f, examiner=a.examiner or "demo-examiner", note="bundled sample")
-            print(f"  + {entry['evidence']:<32} sha256={entry['sha256'][:24]}...")
-    result = workflow.analyze_case(case, examiner=a.examiner or "demo-examiner", year=2026)
-    _print_summary(result)
-    print(f"  Report:    {case.dir / 'report.html'}")
-    print(f"  Dashboard: python -m tracevault serve --cases {a.cases}")
+    """Build each bundled sample breach as a full case and analyse it."""
+    examiner = a.examiner or "demo-examiner"
+    for case_id, (folder, title) in SAMPLE_CASES.items():
+        print(f"\n== {case_id}: {title}")
+        try:
+            case = Case.create(a.cases, case_id, title=title, examiner=examiner)
+        except FileExistsError:
+            print(f"Case {case_id} already exists - re-running analysis.")
+            case = Case.open(a.cases, case_id)
+        else:
+            for f in sorted((SAMPLES / folder).iterdir()):
+                entry = case.ingest(f, examiner=examiner, note="bundled sample")
+                print(f"  + {entry['evidence']:<32} sha256={entry['sha256'][:24]}...")
+        result = workflow.analyze_case(case, examiner=examiner, year=2026)
+        _print_summary(result)
+        print(f"  Report:    {case.dir / 'report.html'}")
+    print(f"\n  Dashboard: python -m tracevault serve --cases {a.cases}")
     return 0
 
 
@@ -142,8 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("serve", cmd_serve, "start the local dashboard")
     sp.add_argument("--host", default="127.0.0.1"); sp.add_argument("--port", type=int, default=8765)
 
-    sp = add("demo", cmd_demo, "create and analyse the bundled sample breach")
-    sp.add_argument("--case-id", default="CASE-001"); sp.add_argument("--examiner")
+    sp = add("demo", cmd_demo, "create and analyse the bundled sample breaches")
+    sp.add_argument("--examiner")
 
     return p
 

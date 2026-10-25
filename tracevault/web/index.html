@@ -172,7 +172,7 @@ function render() {
         ${a.iocs.ips.map(x => `<span class="chip ${x.external ? "ext" : ""}" title="${x.external ? "external" : "internal"}">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
         <div class="muted" style="font-size:11px;margin:10px 0 4px">ACCOUNTS</div>
         ${a.iocs.users.map(x => `<span class="chip">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
-        <div class="muted" style="font-size:11px;margin:10px 0 4px">HOSTS</div>
+        <div class="muted" style="font-size:11px;margin:10px 0 4px">HOSTS &amp; TENANTS</div>
         ${a.iocs.hosts.map(x => `<span class="chip">${esc(x.value)} &times;${x.findings}</span>`).join("") || '<span class="muted">none</span>'}
       </div>
     </div>
